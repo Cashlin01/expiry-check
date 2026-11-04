@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="theme-color" content="#F6F2EC">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="效期盤點">
+<title>效期盤點｜寵物好事</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+:root{
+  --bg:#F6F2EC; --card:#FFFFFF; --ink:#3B3732; --sub:#8A837A; --line:#E7E1D8;
+  --accent:#7D8B6F; --accent-d:#66745A; --soft:#EEF0E8;
+  --warn:#C27A52; --warn-soft:#F8EDE5; --bad:#A9473B; --bad-soft:#F6E4E1;
+  --r:16px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;font-size:16px;line-height:1.5}
+body{min-height:100vh;padding-bottom:110px;overflow-x:hidden}
+.wrap{max-width:520px;margin:0 auto;padding:20px 18px}
+.brand{font-size:12px;letter-spacing:.18em;color:var(--sub);text-transform:uppercase}
+h1{font-size:26px;font-weight:600;margin:4px 0 18px;letter-spacing:.02em}
+h2{font-size:15px;font-weight:600;margin:24px 0 10px;color:var(--sub);letter-spacing:.06em}
+.card{background:var(--card);border-radius:var(--r);padding:18px;border:1px solid var(--line)}
+.card+.card{margin-top:12px}
+label{display:block;font-size:13px;color:var(--sub);margin:14px 0 6px}
+label:first-child{margin-top:0}
+input,select{width:100%;min-width:0;font:inherit;font-size:17px;padding:13px 14px;border:1px solid var(--line);
+  border-radius:12px;background:#FCFBF9;color:var(--ink);outline:none;appearance:none;-webkit-appearance:none}
+input:focus,select:focus{border-color:var(--accent);background:#fff}
+select{background-image:linear-gradient(45deg,transparent 50%,var(--sub) 50%),linear-gradient(135deg,var(--sub) 50%,transparent 50%);
+  background-position:calc(100% - 20px) 50%,calc(100% - 15px) 50%;background-size:5px 5px;background-repeat:no-repeat}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;font:inherit;font-size:17px;font-weight:600;
+  padding:15px;border-radius:14px;border:none;background:var(--accent);color:#fff;cursor:pointer}
+.btn:active{background:var(--accent-d)}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.btn.light{background:var(--soft);color:var(--accent-d)}
+.btn.big{padding:22px;font-size:19px;border-radius:18px}
+.btn:disabled{opacity:.45}
+.row{display:flex;gap:10px}.row>*{flex:1;min-width:0}
+.muted{color:var(--sub);font-size:13px}
+.link{background:none;border:none;color:var(--accent-d);font:inherit;font-size:14px;padding:6px 0;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.bar{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--sub);
+  background:var(--card);border:1px solid var(--line);border-radius:999px;padding:8px 14px;margin-bottom:18px}
+.bar b{color:var(--ink);font-weight:600}
+.shelfhead{display:flex;align-items:baseline;gap:10px;margin:2px 0 4px}
+.shelfcode{font-size:40px;font-weight:600;letter-spacing:.03em}
+.chip{display:inline-block;white-space:nowrap;font-size:12px;padding:3px 10px;border-radius:999px;background:var(--soft);color:var(--accent-d);font-weight:600}
+.chip.warn{background:var(--warn-soft);color:var(--warn)}
+.chip.bad{background:var(--bad-soft);color:var(--bad)}
+.chip.gray{background:#F0EDE8;color:var(--sub)}
+.item{display:flex;gap:12px;align-items:flex-start;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-top:10px}
+.item .main{flex:1;min-width:0}
+.item .name{font-weight:600;font-size:15px;overflow:hidden;text-overflow:ellipsis}
+.item .meta{font-size:13px;color:var(--sub);margin-top:2px}
+.item .qty{font-size:22px;font-weight:600;text-align:right;white-space:nowrap}
+.item .qty small{display:block;font-size:11px;color:var(--sub);font-weight:400}
+.empty{text-align:center;color:var(--sub);padding:28px 10px;font-size:14px;border:1px dashed var(--line);border-radius:14px;margin-top:10px}
+.foot{position:fixed;left:0;right:0;bottom:0;background:linear-gradient(to top,var(--bg) 70%,rgba(246,242,236,0));padding:18px 18px calc(18px + env(safe-area-inset-bottom))}
+.foot .in{max-width:520px;margin:0 auto;display:flex;flex-direction:column;gap:10px}
+.seg{display:flex;flex-direction:column;gap:8px}
+.seg button{font:inherit;font-size:16px;text-align:left;padding:13px 14px;border-radius:12px;border:1px solid var(--line);background:#FCFBF9;color:var(--ink);cursor:pointer}
+.seg button.on{border-color:var(--accent);background:var(--soft);color:var(--accent-d);font-weight:600}
+.note{font-size:13px;border-radius:10px;padding:10px 12px;margin-top:8px}
+.note.ok{background:var(--soft);color:var(--accent-d)}
+.note.warn{background:var(--warn-soft);color:var(--warn)}
+.note.bad{background:var(--bad-soft);color:var(--bad)}
+.progress{height:6px;background:var(--line);border-radius:9px;overflow:hidden;margin:10px 0 4px}
+.progress i{display:block;height:100%;background:var(--accent);border-radius:9px}
+.hidden{display:none!important}
+.sheet{position:fixed;inset:0;background:rgba(40,36,32,.38);display:flex;align-items:flex-end;z-index:20}
+.sheet .panel{background:var(--bg);width:100%;max-width:560px;margin:0 auto;border-radius:22px 22px 0 0;padding:22px 18px calc(22px + env(safe-area-inset-bottom));
+  max-height:92vh;overflow:auto}
+.sheet .panel h3{margin:0 0 4px;font-size:19px}
+.dialog{position:fixed;inset:0;background:rgba(40,36,32,.38);display:flex;align-items:center;justify-content:center;z-index:40;padding:24px}
+.dialog .panel{background:var(--card);border-radius:20px;padding:22px;max-width:380px;width:100%}
+.dialog p{margin:6px 0 18px;color:var(--sub);font-size:15px}
+.scanner{position:fixed;inset:0;background:#1E1C1A;z-index:30;display:flex;flex-direction:column;color:#fff}
+.scanner .top{display:flex;justify-content:space-between;align-items:center;padding:16px 18px;padding-top:calc(16px + env(safe-area-inset-top))}
+.scanner .top button{background:rgba(255,255,255,.14);color:#fff;border:none;font:inherit;padding:8px 14px;border-radius:999px}
+#reader{flex:1;width:100%;overflow:hidden}
+#reader video{object-fit:cover}
+.scanner .bottom{padding:16px 18px calc(18px + env(safe-area-inset-bottom));background:#1E1C1A}
+.scanner .bottom input{background:#2C2926;border-color:#3D3935;color:#fff}
+.scanner .msg{font-size:14px;color:#CFC8BE;text-align:center;padding:4px 0 12px}
+.toast{position:fixed;left:50%;top:18px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:11px 18px;border-radius:999px;font-size:14px;z-index:50;
+  box-shadow:0 6px 20px rgba(0,0,0,.15);max-width:90vw;text-align:center}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+.tile .v{font-size:26px;font-weight:600}
+.tile .k{font-size:12px;color:var(--sub)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:8px}
+.cell{border-radius:12px;padding:10px;font-size:13px;border:1px solid var(--line);background:var(--card)}
+.cell b{display:block;font-size:16px}
+.cell.done{background:var(--soft);border-color:#D6DDCD}
+.cell.hasexp{background:var(--warn-soft);border-color:#EBD3C2}
+.cell.todo{background:#fff;color:var(--sub)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+td,th{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{color:var(--sub);font-weight:500}
+.sync{font-size:12px;color:var(--warn);margin-top:6px}
+</style>
+</head>
+<body>
+<!-- ================= 開始 ================= -->
+<section id="v-start" class="wrap">
+  <div class="brand">PET GOOD · EXPIRY CHECK</div>
+  <h1>效期盤點</h1>
+  <div class="card">
+    <label for="f-staff">盤點人員</label>
+    <input id="f-staff" placeholder="輸入你的姓名" autocomplete="name">
+    <label for="f-store">門市</label>
+    <select id="f-store"><option value="">載入中…</option></select>
+    <label>盤點日期</label>
+    <input id="f-date" readonly>
+  </div>
+  <div style="margin-top:16px"><button class="btn big" id="b-start">開始盤點</button></div>
+  <p class="muted" id="master-info" style="margin-top:16px"></p>
+  <div class="note bad hidden" id="master-err"></div>
+  <div class="sync hidden" id="sync-start"></div>
+  <p style="margin-top:28px;text-align:center"><button class="link" id="b-to-manager">主管查看盤點進度</button></p>
+</section>
+<!-- ================= 掃貨架 ================= -->
+<section id="v-pick" class="wrap hidden">
+  <div class="bar"><span><b id="p-staff"></b>・<span id="p-store"></span>・<span id="p-date"></span></span><button class="link" id="b-change">變更</button></div>
+  <h1>掃描貨架條碼</h1>
+  <button class="btn big" id="b-scan-shelf">開啟相機掃描貨架</button>
+  <div class="row" style="margin-top:12px">
+    <input id="f-shelf" placeholder="或手動輸入，如 1A01" autocapitalize="characters" style="flex:2">
+    <button class="btn ghost" id="b-shelf-go" style="flex:1">確定</button>
+  </div>
+  <h2>今日本店進度</h2>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:baseline">
+      <div><span style="font-size:28px;font-weight:600" id="pg-done">0</span><span class="muted"> / <span id="pg-total">0</span> 座已盤點</span></div>
+      <button class="link" id="b-refresh">重新整理</button>
+    </div>
+    <div class="progress"><i id="pg-bar" style="width:0"></i></div>
+    <div class="muted" id="pg-mine"></div>
+  </div>
+  <div class="sync hidden" id="sync-pick"></div>
+</section>
+<!-- ================= 貨架作業中 ================= -->
+<section id="v-shelf" class="wrap hidden">
+  <div class="bar"><span><b id="s-staff"></b>・<span id="s-store"></span></span><button class="link" id="b-leave">換貨架</button></div>
+  <div class="muted">目前貨架</div>
+  <div class="shelfhead"><span class="shelfcode" id="s-code"></span><span class="chip gray" id="s-area"></span></div>
+  <div id="s-already" class="note warn hidden"></div>
+  <h2>即期品登記 <span id="s-count"></span></h2>
+  <div id="s-list"></div>
+  <div class="foot"><div class="in">
+    <button class="btn light" id="b-scan-item">＋ 掃描即期商品</button>
+    <button class="btn" id="b-finish">此貨架無即期品</button>
+  </div></div>
+</section>
+<!-- ================= 主管 ================= -->
+<section id="v-manager" class="wrap hidden">
+  <div class="brand">MANAGER VIEW</div>
+  <h1>盤點進度</h1>
+  <div class="card">
+    <label for="m-store">門市</label>
+    <select id="m-store"></select>
+    <div class="row">
+      <div><label for="m-from">從</label><input id="m-from" type="date"></div>
+      <div><label for="m-to">到</label><input id="m-to" type="date"></div>
+    </div>
+    <div style="margin-top:14px"><button class="btn" id="b-m-query">查詢</button></div>
+  </div>
+  <div id="m-result" class="hidden">
+    <h2>總覽</h2>
+    <div class="tiles">
+      <div class="tile"><div class="v" id="m-done"></div><div class="k">已盤貨架</div></div>
+      <div class="tile"><div class="v" id="m-todo"></div><div class="k">未盤貨架</div></div>
+      <div class="tile"><div class="v" id="m-items"></div><div class="k">登記品項（筆）</div></div>
+      <div class="tile"><div class="v" id="m-reg"></div><div class="k">正價即期數量（可向廠商反映）</div></div>
+    </div>
+    <h2>貨架狀態</h2>
+    <div class="muted" style="margin-bottom:8px"><span class="chip">已盤・無即期</span> <span class="chip warn">已盤・有即期</span> <span class="chip gray">未盤</span></div>
+    <div class="grid" id="m-grid"></div>
+    <h2>即期品明細</h2>
+    <div class="card" style="padding:6px 10px;overflow-x:auto"><table id="m-table"></table></div>
+    <div style="margin-top:14px"><button class="btn ghost" id="b-m-csv">下載明細（CSV，可用 Excel 開啟）</button></div>
+  </div>
+  <p style="margin-top:28px;text-align:center"><button class="link" id="b-m-back">返回盤點畫面</button></p>
+</section>
+<!-- ================= 商品登記表單 ================= -->
+<div class="sheet hidden" id="sh-item"><div class="panel">
+  <h3 id="i-title">登記即期品</h3>
+  <div class="muted" id="i-code"></div>
+  <div id="i-name-wrap">
+    <label for="i-name">品名</label>
+    <input id="i-name" placeholder="主檔查無此商品，請手動輸入品名">
+  </div>
+  <div id="i-name-show" style="font-weight:600;font-size:17px;margin-top:10px"></div>
+  <div id="i-master-note" class="note warn hidden">主檔查無此條碼，將標記為「主檔未建檔」</div>
+  <label for="i-exp">效期（年月日 8 碼，例如 20270315）</label>
+  <input id="i-exp" inputmode="numeric" maxlength="10" placeholder="YYYYMMDD">
+  <div id="i-exp-note" class="hidden"></div>
+  <label>商品性質</label>
+  <div class="seg" id="i-kind">
+    <button data-k="都是正價">即期都是正價商品</button>
+    <button data-k="都是贈品">即期都是贈品</button>
+    <button data-k="正價/贈品都有">正價／贈品都有即期</button>
+  </div>
+  <div id="i-qty-one" class="hidden">
+    <label for="i-qty">數量</label>
+    <input id="i-qty" inputmode="numeric" placeholder="0">
+  </div>
+  <div id="i-qty-two" class="row hidden">
+    <div><label for="i-qreg">正價數量</label><input id="i-qreg" inputmode="numeric" placeholder="0"></div>
+    <div><label for="i-qgift">贈品數量</label><input id="i-qgift" inputmode="numeric" placeholder="0"></div>
+  </div>
+  <div id="i-err" class="note bad hidden"></div>
+  <div class="row" style="margin-top:20px">
+    <button class="btn ghost" id="i-cancel">取消</button>
+    <button class="btn" id="i-save" style="flex:2">加入</button>
+  </div>
+  <div style="text-align:center;margin-top:10px"><button class="link hidden" id="i-delete" style="color:var(--bad)">刪除這筆</button></div>
+</div></div>
+<!-- ================= 掃描器 ================= -->
+<div class="scanner hidden" id="scanner">
+  <div class="top"><span id="sc-title">掃描</span><button id="sc-close">關閉</button></div>
+  <div id="reader"></div>
+  <div class="bottom">
+    <div class="msg" id="sc-msg">將條碼對準畫面中央</div>
+    <div class="row">
+      <input id="sc-manual" inputmode="text" placeholder="掃不到？手動輸入條碼" style="flex:2">
+      <button class="btn" id="sc-ok" style="flex:1">確定</button>
+    </div>
+  </div>
+</div>
+<div class="dialog hidden" id="dlg"><div class="panel">
+  <h3 id="dlg-t" style="margin:0"></h3><p id="dlg-m"></p>
+  <div class="row"><button class="btn ghost" id="dlg-no">取消</button><button class="btn" id="dlg-yes">確定</button></div>
+</div></div>
+<div class="toast hidden" id="toast"></div>
+<script>
+// 把 Apps Script 部署後的網址貼在這裡（以 /exec 結尾）
+const API_URL = 'https://script.google.com/macros/s/AKfycbyb2srLt-fbGEzpWy2hQ9tIP71sOonQVk-3UDfQUDVChrUI3ChoErQSTtDc0AhgBpOtrg/exec';
+const EXPIRY_MONTHS = 6;           // 即期標準：效期剩 6 個月內（含）
+const MASTER_MAX_AGE_H = 12;       // 主檔快取多久重新下載
+const DEFAULT_STORE = '文心貓店';  // 門市下拉選單預設選取
+const FALLBACK_STORES = ['文心貓店', '文心犬店', '忠明', '公益', '大里', '水湳', '復中', '八德', '南港', '新莊']; // 連不上後端時使用
+
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } }
+};
+const api = () => { const u = new URLSearchParams(location.search).get('api'); if (u) store.set('apiUrl', u); return store.get('apiUrl', '') || API_URL; };
+const pad = n => String(n).padStart(2, '0');
+const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const today = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
+function addMonths(d, m) { const r = new Date(d); const day = r.getDate(); r.setDate(1); r.setMonth(r.getMonth() + m); const last = new Date(r.getFullYear(), r.getMonth() + 1, 0).getDate(); r.setDate(Math.min(day, last)); return r; }
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function show(id) { ['v-start', 'v-pick', 'v-shelf', 'v-manager'].forEach(v => $(v).classList.toggle('hidden', v !== id)); window.scrollTo(0, 0); }
+let toastT; function toast(m, ms = 2400) { const t = $('toast'); t.textContent = m; t.classList.remove('hidden'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.add('hidden'), ms); }
+function ask(title, msg, yes = '確定', no = '取消') {
+  return new Promise(res => {
+    $('dlg-t').textContent = title; $('dlg-m').textContent = msg; $('dlg-yes').textContent = yes; $('dlg-no').textContent = no;
+    $('dlg-no').classList.toggle('hidden', !no);
+    $('dlg').classList.remove('hidden');
+    const done = v => { $('dlg').classList.add('hidden'); $('dlg-yes').onclick = $('dlg-no').onclick = null; res(v); };
+    $('dlg-yes').onclick = () => done(true); $('dlg-no').onclick = () => done(false);
+  });
+}
+async function getJSON(params) {
+  const u = api(); if (!u || u.startsWith('PASTE')) throw new Error('尚未設定後端網址');
+  const r = await fetch(u + '?' + new URLSearchParams(params), { redirect: 'follow' });
+  const t = await r.text(); let j;
+  try { j = JSON.parse(t); } catch (e) { throw new Error('後端回傳的不是資料，請確認 Apps Script 部署時「誰可以存取」選「所有人」，且網址結尾是 /exec'); }
+  if (!j.ok) throw new Error(j.error || '讀取失敗'); return j;
+}
+async function postJSON(body) {
+  const r = await fetch(api(), { method: 'POST', body: JSON.stringify(body), redirect: 'follow' });
+  const j = await r.json(); if (!j.ok) throw new Error(j.error || '寫入失敗'); return j;
+}
+
+let M = { products: new Map(), shelves: [], stores: [], updated: '' };
+function loadMasterFrom(j) {
+  M.products = new Map(j.products.map(p => [p[0], p]));
+  M.shelves = j.shelves; M.stores = j.stores; M.updated = j.updated;
+}
+async function initMaster() {
+  const cached = store.get('master', null);
+  if (cached) loadMasterFrom(cached);
+  const stale = !cached || (Date.now() - (cached.fetchedAt || 0)) / 36e5 > MASTER_MAX_AGE_H;
+  renderMasterInfo();
+  if (stale) await refreshMaster(!cached);
+}
+async function refreshMaster(loud) {
+  try {
+    if (loud) $('master-info').textContent = '正在下載商品主檔…';
+    const j = await getJSON({ action: 'master' });
+    j.fetchedAt = Date.now();
+    loadMasterFrom(j);
+    if (!store.set('master', j)) console.warn('主檔太大，無法快取');
+  } catch (e) {
+    masterErr = e.message === 'Failed to fetch' ? '連不上後端（請確認網路，或 index.html 裡的網址是否正確）' : e.message;
+  }
+  renderMasterInfo();
+}
+let masterErr = '';
+function renderMasterInfo() {
+  const stores = M.stores.length ? M.stores : FALLBACK_STORES;
+  const sel = $('f-store'), cur = stores.includes(DEFAULT_STORE) ? DEFAULT_STORE : (S.store || store.get('profile', {}).store || '');
+  $('master-err').classList.toggle('hidden', !masterErr || M.products.size > 0);
+  $('master-err').textContent = '無法下載商品主檔與貨架主檔：' + masterErr;
+  sel.innerHTML = '<option value="">請選擇門市</option>' + stores.map(s => `<option ${s === cur ? 'selected' : ''}>${esc(s)}</option>`).join('');
+  $('m-store').innerHTML = stores.map(s => `<option ${s === cur ? 'selected' : ''}>${esc(s)}</option>`).join('');
+  $('master-info').textContent = '';
+  if (M.products.size) $('master-info').textContent = `商品主檔 ${M.products.size.toLocaleString()} 筆・貨架 ${M.shelves.length} 座（更新於 ${M.updated.slice(5, 16)}）`;
+}
+function findProduct(code) {
+  code = String(code).trim();
+  const tries = [code];
+  if (code.length === 13 && code[0] === '0') tries.push(code.slice(1));   // EAN-13 ↔ UPC-A
+  if (code.length === 12) tries.push('0' + code);
+  for (const c of tries) if (M.products.has(c)) return M.products.get(c);
+  return null;
+}
+const shelvesForStore = s => M.shelves.filter(x => !x[0] || x[0] === s);
+function findShelf(code) {
+  code = String(code).trim().toUpperCase();
+  return shelvesForStore(S.store).find(x => x[1].toUpperCase() === code) || null;
+}
+
+let S = { staff: '', store: '', date: ymd(today()), shelf: null, items: [], batchId: '', remote: [] };
+function saveDraft() { store.set('draft', S.shelf ? { shelf: S.shelf, items: S.items, batchId: S.batchId, date: S.date, store: S.store, staff: S.staff } : null); }
+const queue = () => store.get('queue', []);
+
+function initStart() {
+  const p = store.get('profile', {});
+  $('f-staff').value = p.staff || '';
+  $('f-date').value = S.date.replace(/-/g, '/');
+}
+$('b-start').onclick = () => {
+  const staff = $('f-staff').value.trim(), st = $('f-store').value;
+  if (!staff) return toast('請輸入盤點人員姓名');
+  if (!st) return toast('請選擇門市');
+  if (!M.shelves.length) return ask('還不能開始盤點', '尚未下載貨架主檔。' + (masterErr ? masterErr : '請確認網路後重新整理頁面。'), '知道了', '');
+  S.staff = staff; S.store = st; S.date = ymd(today());
+  store.set('profile', { staff, store: st });
+  goPick();
+};
+$('b-change').onclick = () => { initStart(); show('v-start'); };
+
+function goPick() {
+  $('p-staff').textContent = S.staff; $('p-store').textContent = S.store; $('p-date').textContent = S.date.slice(5).replace('-', '/');
+  $('f-shelf').value = '';
+  show('v-pick'); renderProgress(); loadRemote();
+}
+async function loadRemote() {
+  try { const j = await getJSON({ action: 'status', store: S.store, from: S.date, to: S.date }); S.remote = j.records; }
+  catch (e) {  }
+  renderProgress();
+}
+function doneMap() {
+  const m = new Map();
+  S.remote.forEach(r => m.set(String(r.shelf).toUpperCase(), r));
+  queue().filter(q => q.store === S.store && q.date === S.date).forEach(q => m.set(q.shelf.toUpperCase(), { shelf: q.shelf, staff: q.staff, time: '待上傳', count: q.items.length }));
+  return m;
+}
+function renderProgress() {
+  const all = shelvesForStore(S.store), dm = doneMap();
+  const done = all.filter(s => dm.has(s[1].toUpperCase())).length;
+  $('pg-done').textContent = done; $('pg-total').textContent = all.length;
+  $('pg-bar').style.width = all.length ? (done / all.length * 100) + '%' : '0';
+  const mine = [...dm.values()].filter(r => r.staff === S.staff).map(r => r.shelf);
+  $('pg-mine').textContent = mine.length ? `你今天已盤：${mine.join('、')}` : '你今天還沒有盤點紀錄';
+  renderSync();
+}
+$('b-refresh').onclick = () => { flushQueue(); loadRemote(); toast('已更新'); };
+$('b-scan-shelf').onclick = () => openScanner('掃描貨架條碼', onShelfCode);
+$('b-shelf-go').onclick = () => onShelfCode($('f-shelf').value);
+$('f-shelf').onkeydown = e => { if (e.key === 'Enter') onShelfCode($('f-shelf').value); };
+async function onShelfCode(code) {
+  code = String(code || '').trim(); if (!code) return;
+  const sh = findShelf(code);
+  if (!sh) { closeScanner(); await ask('找不到這座貨架', `「${code}」不在本店的貨架主檔中，請確認條碼或通知主管。`, '知道了', ''); return; }
+  closeScanner();
+  S.shelf = { code: sh[1], area: sh[2] }; S.items = []; S.batchId = `${S.date.replace(/-/g, '')}-${sh[1]}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  saveDraft(); goShelf();
+}
+
+function goShelf() {
+  $('s-staff').textContent = S.staff; $('s-store').textContent = S.store;
+  $('s-code').textContent = S.shelf.code;
+  $('s-area').textContent = S.shelf.area || '未設定區域'; $('s-area').classList.toggle('hidden', false);
+  const prev = doneMap().get(S.shelf.code.toUpperCase());
+  $('s-already').classList.toggle('hidden', !prev);
+  if (prev) $('s-already').textContent = `此貨架今天已由 ${prev.staff} 盤點過（${String(prev.time).slice(11, 16) || prev.time}）。再次送出會新增一筆紀錄。`;
+  show('v-shelf'); renderItems();
+}
+function judge(expStr) {
+  const e = new Date(expStr + 'T00:00:00'), t = today();
+  const days = Math.round((e - t) / 864e5);
+  if (e < t) return { days, judge: '已過期', cls: 'bad' };
+  if (e <= addMonths(t, EXPIRY_MONTHS)) return { days, judge: '即期', cls: 'warn' };
+  return { days, judge: '未達即期', cls: 'gray' };
+}
+function renderItems() {
+  const L = $('s-list');
+  $('s-count').textContent = S.items.length ? `（${S.items.length}）` : '';
+  if (!S.items.length) L.innerHTML = '<div class="empty">尚未登記任何即期品<br>有即期品請按「掃描即期商品」</div>';
+  else L.innerHTML = S.items.map((it, i) => `
+    <div class="item" data-i="${i}">
+      <div class="main">
+        <div class="name">${esc(it.name)}</div>
+        <div class="meta">${esc(it.barcode)}${it.inMaster ? '' : '・<span style="color:var(--warn)">主檔未建檔</span>'}</div>
+        <div class="meta" style="margin-top:6px"><span class="chip ${it.cls}">${it.judge}</span> 效期 ${it.expiry.replace(/-/g, '/')}・${esc(it.kind)}</div>
+      </div>
+      <div class="qty">${it.regularQty + it.giftQty}<small>${it.kind === '正價/贈品都有' ? `正${it.regularQty}／贈${it.giftQty}` : '件'}</small></div>
+    </div>`).join('');
+  L.querySelectorAll('.item').forEach(el => el.onclick = () => openItem(S.items[+el.dataset.i], +el.dataset.i));
+  $('b-finish').textContent = S.items.length ? `完成此貨架（${S.items.length} 筆）` : '此貨架無即期品';
+}
+$('b-scan-item').onclick = () => openScanner('掃描商品條碼', code => { closeScanner(); newItem(code); });
+$('b-leave').onclick = async () => {
+  if (S.items.length && !(await ask('離開這座貨架？', `已登記的 ${S.items.length} 筆尚未送出，離開後會清除。`, '清除並離開'))) return;
+  S.shelf = null; S.items = []; saveDraft(); goPick();
+};
+$('b-finish').onclick = async () => {
+  const n = S.items.length;
+  const ok = n ? await ask(`送出 ${S.shelf.code}`, `確認此貨架共 ${n} 筆即期品，送出後無法修改。`, '送出')
+               : await ask(`${S.shelf.code} 無即期品`, '確認已檢查整座貨架，沒有即期品？', '確認無即期');
+  if (!ok) return;
+  const payload = { type: 'shelf', batchId: S.batchId, date: S.date, store: S.store, staff: S.staff, shelf: S.shelf.code, area: S.shelf.area || '',
+    items: S.items.map(({ cls, ...x }) => x) };
+  const q = queue(); q.push(payload); store.set('queue', q);
+  const code = S.shelf.code;
+  S.shelf = null; S.items = []; saveDraft();
+  goPick();
+  const r = await flushQueue();
+  toast(r.failed ? `${code} 已暫存在手機，網路恢復後會自動上傳` : `${code} 已送出`);
+  loadRemote();
+};
+
+let F = null; // 編輯中的品項
+function newItem(code) {
+  code = String(code || '').trim(); if (!code) return;
+  const p = findProduct(code);
+  openItem({ barcode: p ? p[0] : code, name: p ? p[1] : '', inMaster: !!p, supplier: p ? p[2] : '', dept: p ? p[3] : '', cat: p ? p[4] : '', expiry: '', kind: '', regularQty: 0, giftQty: 0 }, -1);
+}
+function openItem(it, idx) {
+  F = { ...it, idx };
+  $('i-title').textContent = idx < 0 ? '登記即期品' : '修改即期品';
+  $('i-code').textContent = '條碼 ' + it.barcode;
+  $('i-name-wrap').classList.toggle('hidden', it.inMaster);
+  $('i-name-show').classList.toggle('hidden', !it.inMaster);
+  $('i-master-note').classList.toggle('hidden', it.inMaster);
+  $('i-name').value = it.inMaster ? '' : it.name; $('i-name-show').textContent = it.inMaster ? it.name : '';
+  $('i-exp').value = it.expiry ? it.expiry.replace(/-/g, '') : '';
+  setKind(it.kind);
+  $('i-qty').value = it.kind && it.kind !== '正價/贈品都有' ? (it.regularQty + it.giftQty || '') : '';
+  $('i-qreg').value = it.kind === '正價/贈品都有' ? it.regularQty : ''; $('i-qgift').value = it.kind === '正價/贈品都有' ? it.giftQty : '';
+  $('i-err').classList.add('hidden');
+  $('i-delete').classList.toggle('hidden', idx < 0);
+  $('i-save').textContent = idx < 0 ? '加入' : '儲存';
+  expNote();
+  $('sh-item').classList.remove('hidden');
+  setTimeout(() => (it.inMaster ? $('i-exp') : $('i-name')).focus(), 250);
+}
+function setKind(k) {
+  F.kind = k;
+  document.querySelectorAll('#i-kind button').forEach(b => b.classList.toggle('on', b.dataset.k === k));
+  $('i-qty-one').classList.toggle('hidden', !k || k === '正價/贈品都有');
+  $('i-qty-two').classList.toggle('hidden', k !== '正價/贈品都有');
+}
+document.querySelectorAll('#i-kind button').forEach(b => b.onclick = () => { setKind(b.dataset.k); (b.dataset.k === '正價/贈品都有' ? $('i-qreg') : $('i-qty')).focus(); });
+function parseExp(v) {
+  v = String(v).replace(/[^\d]/g, '');
+  if (v.length !== 8) return null;
+  const y = +v.slice(0, 4), m = +v.slice(4, 6), d = +v.slice(6, 8);
+  const dt = new Date(y, m - 1, d);
+  if (y < 2000 || y > 2100 || dt.getMonth() !== m - 1 || dt.getDate() !== d) return null;
+  return ymd(dt);
+}
+function expNote() {
+  const n = $('i-exp-note'), raw = $('i-exp').value.replace(/[^\d]/g, '');
+  if (raw.length < 8) { n.className = 'hidden'; return null; }
+  const e = parseExp(raw);
+  if (!e) { n.className = 'note bad'; n.textContent = '日期格式不正確，請輸入 8 碼，例如 20270315'; return null; }
+  const j = judge(e);
+  n.className = 'note ' + (j.cls === 'gray' ? 'warn' : j.cls === 'warn' ? 'ok' : 'bad');
+  n.textContent = j.judge === '已過期' ? `${e.replace(/-/g, '/')}・已過期 ${-j.days} 天`
+    : j.judge === '即期' ? `${e.replace(/-/g, '/')}・剩 ${j.days} 天，屬於即期品`
+    : `${e.replace(/-/g, '/')}・剩 ${j.days} 天，未達即期標準（${EXPIRY_MONTHS} 個月內）。仍可加入，會標記為「未達即期」。`;
+  return e;
+}
+$('i-exp').oninput = expNote;
+['i-name', 'i-exp', 'i-qty', 'i-qreg', 'i-qgift'].forEach(id => $(id).addEventListener('input', () => $('i-err').classList.add('hidden')));
+const num = v => { const n = parseInt(String(v).replace(/[^\d]/g, ''), 10); return isNaN(n) ? 0 : n; };
+$('i-save').onclick = () => {
+  const err = m => { $('i-err').textContent = m; $('i-err').classList.remove('hidden'); };
+  const name = F.inMaster ? F.name : $('i-name').value.trim();
+  if (!name) return err('請輸入品名');
+  const exp = expNote(); if (!exp) return err('請輸入正確的效期（8 碼）');
+  if (!F.kind) return err('請選擇商品性質');
+  let reg = 0, gift = 0;
+  if (F.kind === '正價/贈品都有') { reg = num($('i-qreg').value); gift = num($('i-qgift').value); if (!reg || !gift) return err('選「都有」時，正價和贈品數量都要填（大於 0）'); }
+  else { const q = num($('i-qty').value); if (!q) return err('請輸入數量'); if (F.kind === '都是正價') reg = q; else gift = q; }
+  const j = judge(exp);
+  const it = { barcode: F.barcode, name, inMaster: F.inMaster, supplier: F.supplier, dept: F.dept, cat: F.cat,
+    expiry: exp, daysLeft: j.days, judge: j.judge, cls: j.cls, kind: F.kind, regularQty: reg, giftQty: gift };
+  if (F.idx < 0) S.items.push(it); else S.items[F.idx] = it;
+  saveDraft(); closeItem(); renderItems();
+  toast(F.idx < 0 ? '已加入，可繼續掃描下一個商品' : '已更新');
+};
+$('i-cancel').onclick = closeItem;
+$('i-delete').onclick = async () => { if (await ask('刪除這筆？', F.name, '刪除')) { S.items.splice(F.idx, 1); saveDraft(); closeItem(); renderItems(); } };
+function closeItem() { $('sh-item').classList.add('hidden'); }
+
+let QR = null, onCode = null, busy = false;
+async function openScanner(title, cb) {
+  onCode = cb; busy = false;
+  $('sc-title').textContent = title; $('sc-manual').value = ''; $('sc-msg').textContent = '將條碼對準畫面中央';
+  $('scanner').classList.remove('hidden');
+  if (typeof Html5Qrcode === 'undefined') { $('sc-msg').textContent = '掃描元件載入失敗，請手動輸入條碼'; return; }
+  try {
+    const FM = Html5QrcodeSupportedFormats;
+    QR = new Html5Qrcode('reader', { formatsToSupport: [FM.EAN_13, FM.EAN_8, FM.UPC_A, FM.UPC_E, FM.CODE_128, FM.CODE_39, FM.ITF], useBarCodeDetectorIfSupported: true, verbose: false });
+    await QR.start({ facingMode: 'environment' }, { fps: 12, qrbox: (w, h) => ({ width: Math.min(w * 0.86, 340), height: Math.min(h * 0.3, 150) }), aspectRatio: window.innerHeight / window.innerWidth },
+      text => { if (busy) return; busy = true; try { navigator.vibrate && navigator.vibrate(60); } catch (e) {} onCode(text); }, () => {});
+  } catch (e) {
+    $('sc-msg').textContent = '無法開啟相機（請允許相機權限），可先手動輸入條碼';
+  }
+}
+async function closeScanner() {
+  $('scanner').classList.add('hidden');
+  if (QR) { try { await QR.stop(); } catch (e) {} try { QR.clear(); } catch (e) {} QR = null; }
+}
+$('sc-close').onclick = closeScanner;
+$('sc-ok').onclick = () => { const v = $('sc-manual').value.trim(); if (v) onCode(v); };
+$('sc-manual').onkeydown = e => { if (e.key === 'Enter') $('sc-ok').click(); };
+
+let flushing = false;
+async function flushQueue() {
+  if (flushing) return { failed: queue().length }; flushing = true;
+  let q = queue(), failed = 0;
+  for (const p of [...q]) {
+    try { await postJSON(p); q = queue().filter(x => x.batchId !== p.batchId); store.set('queue', q); }
+    catch (e) { failed++; }
+  }
+  flushing = false; renderSync(); return { failed };
+}
+function renderSync() {
+  const n = queue().length;
+  ['sync-start', 'sync-pick'].forEach(id => { $(id).classList.toggle('hidden', !n); $(id).textContent = `有 ${n} 座貨架的資料暫存在手機、尚未上傳，連上網路後會自動上傳。`; });
+}
+window.addEventListener('online', () => flushQueue().then(loadRemote));
+setInterval(() => { if (queue().length) flushQueue(); }, 30000);
+
+let MR = null;
+$('b-to-manager').onclick = () => { $('m-from').value = $('m-to').value = ymd(today()); show('v-manager'); };
+$('b-m-back').onclick = () => show('v-start');
+$('b-m-query').onclick = async () => {
+  const st = $('m-store').value, from = $('m-from').value, to = $('m-to').value;
+  $('b-m-query').disabled = true; $('b-m-query').textContent = '查詢中…';
+  try { MR = await getJSON({ action: 'status', store: st, from, to }); renderManager(); }
+  catch (e) { toast('查詢失敗：' + e.message); }
+  $('b-m-query').disabled = false; $('b-m-query').textContent = '查詢';
+};
+function renderManager() {
+  const last = new Map();
+  MR.records.forEach(r => last.set(String(r.shelf).toUpperCase(), r));
+  const shelves = MR.shelves;
+  const done = shelves.filter(s => last.has(s[1].toUpperCase()));
+  $('m-done').textContent = `${done.length} / ${shelves.length}`;
+  $('m-todo').textContent = shelves.length - done.length;
+  $('m-items').textContent = MR.items.length;
+  $('m-reg').textContent = MR.items.filter(i => i.judge !== '未達即期').reduce((a, b) => a + b.regularQty, 0);
+  $('m-grid').innerHTML = shelves.map(s => {
+    const r = last.get(s[1].toUpperCase());
+    const cls = !r ? 'todo' : r.count ? 'hasexp' : 'done';
+    const sub = !r ? '未盤' : `${esc(r.staff)}・${r.count ? r.count + ' 筆' : '無即期'}`;
+    return `<div class="cell ${cls}"><b>${esc(s[1])}</b>${sub}</div>`;
+  }).join('');
+  $('m-table').innerHTML = MR.items.length
+    ? '<tr><th>貨架</th><th>品名</th><th>效期</th><th>判斷</th><th>正價</th><th>贈品</th></tr>' +
+      MR.items.map(i => `<tr><td>${esc(i.shelf)}</td><td>${esc(i.name)}${i.master !== '已建檔' ? '<br><span class="chip warn">主檔未建檔</span>' : ''}</td><td style="white-space:nowrap">${esc(i.expiry)}</td>
+        <td><span class="chip ${i.judge === '已過期' ? 'bad' : i.judge === '即期' ? 'warn' : 'gray'}">${esc(i.judge)}</span></td><td>${i.regularQty}</td><td>${i.giftQty}</td></tr>`).join('')
+    : '<tr><td class="muted" style="padding:16px">這段期間沒有即期品紀錄</td></tr>';
+  $('m-result').classList.remove('hidden');
+}
+$('b-m-csv').onclick = () => {
+  if (!MR) return;
+  const head = ['盤點日期', '盤點人員', '貨架號碼', '條碼', '品名', '主檔狀態', '供應商', '效期', '剩餘天數', '即期判斷', '商品性質', '正價數量', '贈品數量'];
+  const rows = MR.items.map(i => [i.date, i.staff, i.shelf, '="' + i.barcode + '"', i.name, i.master, i.supplier, i.expiry, i.daysLeft, i.judge, i.kind, i.regularQty, i.giftQty]);
+  const csv = '﻿' + [head, ...rows].map(r => r.map(c => /[",\n]/.test(String(c)) && !String(c).startsWith('="') ? `"${String(c).replace(/"/g, '""')}"` : c).join(',')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = `效期盤點_${$('m-store').value}_${$('m-from').value}_${$('m-to').value}.csv`;
+  a.click();
+};
+
+(async function boot() {
+  initStart();
+  const p = store.get('profile', {}); S.store = p.store || '';
+  await initMaster();
+  flushQueue();
+  const d = store.get('draft', null);
+  if (d && d.date === ymd(today()) && d.shelf) {
+    Object.assign(S, d);
+    if (await ask('繼續上次的盤點？', `貨架 ${d.shelf.code} 還有 ${d.items.length} 筆尚未送出。`, '繼續', '放棄')) { goShelf(); return; }
+    S.shelf = null; S.items = []; saveDraft();
+  }
+  if (location.hash === '#manager') $('b-to-manager').click();
+})();
+</script>
+</body>
+</html>
