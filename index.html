@@ -116,9 +116,19 @@ th{color:var(--sub);font-weight:500}
 <section id="v-start" class="wrap">
   <div class="brand">PET GOOD · EXPIRY CHECK</div>
   <h1>效期盤點</h1>
+  <div class="card" id="login-card">
+    <label for="l-name">姓名</label>
+    <input id="l-name" placeholder="輸入你的姓名" autocomplete="off">
+    <label for="l-pin">密碼</label>
+    <input id="l-pin" type="password" inputmode="numeric" maxlength="8" placeholder="4 位數字" autocomplete="off">
+    <div id="l-err" class="note bad hidden"></div>
+    <div style="margin-top:16px"><button class="btn big" id="b-login">登入</button></div>
+    <p class="muted" style="margin:12px 0 0">第一次使用請輸入名單上的姓名與密碼，這支手機之後會記住。</p>
+  </div>
+  <div id="main-start" class="hidden">
   <div class="card">
-    <label for="f-staff">盤點人員</label>
-    <input id="f-staff" placeholder="輸入你的姓名" autocomplete="name">
+    <label>盤點人員</label>
+    <div style="display:flex;justify-content:space-between;align-items:center"><b id="u-name" style="font-size:18px"></b><button class="link" id="b-logout">登出</button></div>
     <label for="f-store">門市</label>
     <select id="f-store"><option value="">載入中…</option></select>
     <label>盤點日期</label>
@@ -128,7 +138,8 @@ th{color:var(--sub);font-weight:500}
   <p class="muted" id="master-info" style="margin-top:16px"></p>
   <div class="note bad hidden" id="master-err"></div>
   <div class="sync hidden" id="sync-start"></div>
-  <p style="margin-top:28px;text-align:center"><button class="link" id="b-to-manager">主管查看盤點進度</button></p>
+  <p id="mgr-link" class="hidden" style="margin-top:28px;text-align:center"><button class="link" id="b-to-manager">主管查看盤點進度</button></p>
+  </div>
 </section>
 <!-- ================= 掃貨架 ================= -->
 <section id="v-pick" class="wrap hidden">
@@ -272,6 +283,12 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } }
 };
 const api = () => { const u = new URLSearchParams(location.search).get('api'); if (u) store.set('apiUrl', u); return store.get('apiUrl', '') || API_URL; };
+let AUTH = store.get('auth', null);
+const isMgr = () => !!(AUTH && AUTH.role === '主管');
+function authFail(msg) {
+  AUTH = null; store.set('auth', null); renderAuth(); show('v-start');
+  $('l-err').textContent = msg; $('l-err').classList.remove('hidden');
+}
 const pad = n => String(n).padStart(2, '0');
 const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const today = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
@@ -290,14 +307,17 @@ function ask(title, msg, yes = '確定', no = '取消') {
 }
 async function getJSON(params) {
   const u = api(); if (!u || u.startsWith('PASTE')) throw new Error('尚未設定後端網址');
-  const r = await fetch(u + '?' + new URLSearchParams(params), { redirect: 'follow' });
+  const r = await fetch(u + '?' + new URLSearchParams({ ...params, ...(AUTH ? { name: AUTH.name, pin: AUTH.pin } : {}) }), { redirect: 'follow' });
   const t = await r.text(); let j;
   try { j = JSON.parse(t); } catch (e) { throw new Error('後端回傳的不是資料，請確認 Apps Script 部署時「誰可以存取」選「所有人」，且網址結尾是 /exec'); }
-  if (!j.ok) throw new Error(j.error || '讀取失敗'); return j;
+  if (!j.ok) { const m = String(j.error || '讀取失敗').replace(/^Error:\s*/, ''); if (m.startsWith('AUTH:')) { const msg = m.slice(5).trim(); if (params.action !== 'login') authFail(msg); throw new Error(msg); } throw new Error(m.replace(/^PERM:\s*/, '')); }
+  return j;
 }
 async function postJSON(body) {
-  const r = await fetch(api(), { method: 'POST', body: JSON.stringify(body), redirect: 'follow' });
-  const j = await r.json(); if (!j.ok) throw new Error(j.error || '寫入失敗'); return j;
+  const r = await fetch(api(), { method: 'POST', body: JSON.stringify({ ...body, auth: AUTH ? { name: AUTH.name, pin: AUTH.pin } : null }), redirect: 'follow' });
+  const j = await r.json();
+  if (!j.ok) { const m = String(j.error || '寫入失敗').replace(/^Error:\s*/, ''); if (m.startsWith('AUTH:')) { authFail(m.slice(5).trim()); throw new Error(m.slice(5).trim()); } throw new Error(m.replace(/^PERM:\s*/, '')); }
+  return j;
 }
 
 let M = { products: new Map(), shelves: [], stores: [], updated: '' };
@@ -326,8 +346,9 @@ async function refreshMaster(loud) {
 }
 let masterErr = '';
 function renderMasterInfo() {
-  const stores = M.stores.length ? M.stores : FALLBACK_STORES;
-  const sel = $('f-store'), cur = stores.includes(DEFAULT_STORE) ? DEFAULT_STORE : (S.store || store.get('profile', {}).store || '');
+  const stores = (AUTH && AUTH.store) ? [AUTH.store] : (M.stores.length ? M.stores : FALLBACK_STORES);
+  const sel = $('f-store'), cur = stores.length === 1 ? stores[0] : stores.includes(DEFAULT_STORE) ? DEFAULT_STORE : (S.store || store.get('profile', {}).store || '');
+  sel.disabled = !!(AUTH && AUTH.store); $('m-store').disabled = sel.disabled;
   $('master-err').classList.toggle('hidden', !masterErr || M.products.size > 0);
   $('master-err').textContent = '無法下載商品主檔與貨架主檔：' + masterErr;
   sel.innerHTML = '<option value="">請選擇門市</option>' + stores.map(s => `<option ${s === cur ? 'selected' : ''}>${esc(s)}</option>`).join('');
@@ -365,12 +386,11 @@ const queue = () => store.get('queue', []);
 
 function initStart() {
   const p = store.get('profile', {});
-  $('f-staff').value = p.staff || '';
   $('f-date').value = S.date.replace(/-/g, '/');
 }
 $('b-start').onclick = () => {
-  const staff = $('f-staff').value.trim(), st = $('f-store').value;
-  if (!staff) return toast('請輸入盤點人員姓名');
+  const staff = AUTH ? AUTH.name : '', st = $('f-store').value;
+  if (!staff) return authFail('請先登入');
   if (!st) return toast('請選擇門市');
   if (!M.shelves.length) return ask('還不能開始盤點', '尚未下載貨架主檔。' + (masterErr ? masterErr : '請確認網路後重新整理頁面。'), '知道了', '');
   S.staff = staff; S.store = st; S.date = ymd(today());
@@ -675,7 +695,7 @@ $('b-m-this').onclick = () => { setMonth(0); $('b-m-query').click(); };
 $('b-m-last').onclick = () => { setMonth(-1); $('b-m-query').click(); };
 $('m-month').onchange = () => { const v = $('m-month').value; if (!v) return; const [y, m] = v.split('-').map(Number); const a = new Date(y, m - 1, 1), b = new Date(y, m, 0); $('m-from').value = ymd(a); $('m-to').value = ymd(b); $('b-m-query').click(); };
 const fmtDur = s => s == null ? '－' : s < 60 ? `${s} 秒` : `${Math.floor(s / 60)} 分 ${s % 60} 秒`;
-$('b-to-manager').onclick = () => { setMonth(0); show('v-manager'); };
+$('b-to-manager').onclick = () => { if (!isMgr()) return; setMonth(0); show('v-manager'); };
 $('b-m-back').onclick = () => show('v-start');
 $('b-m-query').onclick = async () => {
   const st = $('m-store').value, from = $('m-from').value, to = $('m-to').value;
@@ -752,9 +772,35 @@ $('b-m-csv').onclick = () => {
   a.click();
 };
 
+function renderAuth() {
+  $('login-card').classList.toggle('hidden', !!AUTH); $('main-start').classList.toggle('hidden', !AUTH);
+  if (AUTH) { $('u-name').textContent = AUTH.name + (isMgr() ? '（主管）' : ''); $('l-err').classList.add('hidden'); }
+  $('mgr-link').classList.toggle('hidden', !isMgr());
+}
+$('b-login').onclick = async () => {
+  const name = $('l-name').value.trim(), pin = $('l-pin').value.trim(), e = $('l-err');
+  e.classList.add('hidden');
+  if (!name || !pin) { e.textContent = '請輸入姓名和密碼'; e.classList.remove('hidden'); return; }
+  $('b-login').disabled = true; $('b-login').textContent = '登入中…';
+  try {
+    AUTH = { name, pin };
+    const j = await getJSON({ action: 'login' });
+    AUTH = { name: j.name, pin, store: j.store, role: j.role }; store.set('auth', AUTH);
+    $('l-pin').value = ''; renderAuth(); renderMasterInfo();
+    await initMaster(); flushQueue();
+  } catch (err) { AUTH = null; e.textContent = err.message; e.classList.remove('hidden'); }
+  $('b-login').disabled = false; $('b-login').textContent = '登入';
+};
+$('l-pin').onkeydown = ev => { if (ev.key === 'Enter') $('b-login').click(); };
+$('b-logout').onclick = async () => {
+  if (!(await ask('登出？', '登出後，這支手機要重新輸入姓名和密碼才能使用。', '登出'))) return;
+  AUTH = null; store.set('auth', null); store.set('master', null); M.products = new Map(); M.shelves = [];
+  renderAuth(); renderMasterInfo();
+};
 (async function boot() {
   if (/ Line\//i.test(navigator.userAgent) && !/openExternalBrowser/.test(location.search)) { location.replace(location.pathname + (location.search ? location.search + '&' : '?') + 'openExternalBrowser=1' + location.hash); return; }
-  initStart();
+  initStart(); renderAuth();
+  if (!AUTH) { renderMasterInfo(); return; }
   const p = store.get('profile', {}); S.store = p.store || '';
   await initMaster();
   flushQueue();
@@ -764,7 +810,7 @@ $('b-m-csv').onclick = () => {
     if (await ask('繼續上次的盤點？', `貨架 ${d.shelf.code} 還有 ${d.items.length} 筆尚未送出。`, '繼續', '放棄')) { goShelf(); return; }
     S.shelf = null; S.items = []; S.deleted = []; saveDraft();
   }
-  if (location.hash === '#manager') $('b-to-manager').click();
+  if (location.hash === '#manager' && isMgr()) $('b-to-manager').click();
 })();
 </script>
 </body>
