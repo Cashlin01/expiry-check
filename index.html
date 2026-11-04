@@ -99,6 +99,12 @@ select{background-image:linear-gradient(45deg,transparent 50%,var(--sub) 50%),li
 .cell.done{background:var(--soft);border-color:#D6DDCD}
 .cell.hasexp{background:var(--warn-soft);border-color:#EBD3C2}
 .cell.todo{background:#fff;color:var(--sub)}
+.cell.fast{box-shadow:inset 0 0 0 2px var(--bad)}
+.cell small{display:block;color:var(--sub);font-size:11px}
+.todo-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.todo-list span{font-size:13px;font-weight:600;padding:4px 10px;border-radius:8px;background:var(--bad-soft);color:var(--bad)}
+#m-staff tr.p{cursor:pointer}
+#m-staff th,#m-staff td{white-space:nowrap}
 table{width:100%;border-collapse:collapse;font-size:13px}
 td,th{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
 th{color:var(--sub);font-weight:500}
@@ -164,6 +170,13 @@ th{color:var(--sub);font-weight:500}
   <div class="card">
     <label for="m-store">門市</label>
     <select id="m-store"></select>
+    <label>期間</label>
+    <div class="row">
+      <button class="btn ghost" id="b-m-this">本月</button>
+      <button class="btn ghost" id="b-m-last">上個月</button>
+    </div>
+    <label for="m-month">或選擇月份</label>
+    <input id="m-month" type="month">
     <div class="row">
       <div><label for="m-from">從</label><input id="m-from" type="date"></div>
       <div><label for="m-to">到</label><input id="m-to" type="date"></div>
@@ -171,6 +184,7 @@ th{color:var(--sub);font-weight:500}
     <div style="margin-top:14px"><button class="btn" id="b-m-query">查詢</button></div>
   </div>
   <div id="m-result" class="hidden">
+    <div class="card" id="m-todo-card" style="margin-top:18px"></div>
     <h2>總覽</h2>
     <div class="tiles">
       <div class="tile"><div class="v" id="m-done"></div><div class="k">已盤貨架</div></div>
@@ -179,8 +193,12 @@ th{color:var(--sub);font-weight:500}
       <div class="tile"><div class="v" id="m-reg"></div><div class="k">正價即期數量（可向廠商反映）</div></div>
     </div>
     <h2>貨架狀態</h2>
-    <div class="muted" style="margin-bottom:8px"><span class="chip">已盤・無即期</span> <span class="chip warn">已盤・有即期</span> <span class="chip gray">未盤</span></div>
+    <div class="muted" style="margin-bottom:8px"><span class="chip">已盤・無即期</span> <span class="chip warn">已盤・有即期</span> <span class="chip gray">未盤</span> <span class="chip bad">有過快紀錄</span></div>
     <div class="grid" id="m-grid"></div>
+    <h2>人員進度</h2>
+    <div class="muted" style="margin:-4px 0 8px">過快＝從掃貨架到送出不到 2 分鐘。只是抽查參考，不代表一定沒確實盤點。點人員可看明細。</div>
+    <div class="card" style="padding:6px 10px;overflow-x:auto"><table id="m-staff"></table></div>
+    <div id="m-staff-detail"></div>
     <h2>即期品明細</h2>
     <div class="card" style="padding:6px 10px;overflow-x:auto"><table id="m-table"></table></div>
     <div style="margin-top:14px"><button class="btn ghost" id="b-m-csv">下載明細（CSV，可用 Excel 開啟）</button></div>
@@ -331,8 +349,18 @@ function findShelf(code) {
   return shelvesForStore(S.store).find(x => x[1].toUpperCase() === code) || null;
 }
 
-let S = { staff: '', store: '', date: ymd(today()), shelf: null, items: [], batchId: '', remote: [] };
-function saveDraft() { store.set('draft', S.shelf ? { shelf: S.shelf, items: S.items, batchId: S.batchId, date: S.date, store: S.store, staff: S.staff } : null); }
+let S = { staff: '', store: '', date: ymd(today()), shelf: null, items: [], deleted: [], batchId: '', remote: [] };
+function saveDraft() { store.set('draft', S.shelf ? { shelf: S.shelf, items: S.items, deleted: S.deleted, startedAt: S.startedAt, batchId: S.batchId, date: S.date, store: S.store, staff: S.staff } : null); }
+const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const sig = x => [x.expiry, x.kind, x.regularQty, x.giftQty, x.name].join('|');
+const strip = ({ cls, saved, orig, staff, ...x }) => x;
+const stamp = t => { const d = new Date(t); return `${ymd(d)} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; };
+const timing = () => S.startedAt ? { startedAt: stamp(S.startedAt), duration: Math.max(0, Math.round((Date.now() - S.startedAt) / 1000)) } : {};
+function changes() {
+  const hadSaved = S.items.some(i => i.saved) || S.deleted.length > 0;
+  const adds = S.items.filter(i => !i.saved), updates = S.items.filter(i => i.saved && sig(i) !== i.orig);
+  return { hadSaved, adds, updates, deletes: S.deleted, pending: adds.length + updates.length + S.deleted.length, any: hadSaved && (adds.length + updates.length + S.deleted.length > 0) };
+}
 const queue = () => store.get('queue', []);
 
 function initStart() {
@@ -385,17 +413,31 @@ async function onShelfCode(code) {
   const sh = findShelf(code);
   if (!sh) { closeScanner(); await ask('找不到這座貨架', `「${code}」不在本店的貨架主檔中，請確認條碼或通知主管。`, '知道了', ''); return; }
   closeScanner();
-  S.shelf = { code: sh[1], area: sh[2] }; S.items = []; S.batchId = `${S.date.replace(/-/g, '')}-${sh[1]}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-  saveDraft(); goShelf();
+  S.shelf = { code: sh[1], area: sh[2] }; S.items = []; S.deleted = []; S.startedAt = Date.now(); S.batchId = `${S.date.replace(/-/g, '')}-${sh[1]}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  saveDraft(); goShelf(); loadShelfItems();
+}
+async function loadShelfItems() {
+  const code = S.shelf.code, n = $('s-already');
+  const prev = doneMap().get(code.toUpperCase());
+  if (prev) { n.className = 'note warn'; n.textContent = `此貨架今天已由 ${prev.staff} 盤點過，正在載入已登記的品項…`; }
+  try {
+    const j = await getJSON({ action: 'shelfItems', store: S.store, date: S.date, shelf: code });
+    if (!S.shelf || S.shelf.code !== code) return;
+    const got = j.items.map(x => { const jd = judge(x.expiry); return { ...x, daysLeft: jd.days, judge: jd.judge, cls: jd.cls, saved: true, orig: sig(x) }; });
+    S.items = got.concat(S.items.filter(i => !i.saved)); saveDraft(); renderItems();
+    if (got.length) { n.className = 'note ok'; n.textContent = `已載入今天送出的 ${got.length} 筆，點品項可修改數量、效期，或刪除。`; }
+    else if (prev) { n.className = 'note warn'; n.textContent = `此貨架今天已由 ${prev.staff} 盤點過（無即期品）。`; }
+    else n.className = 'note hidden';
+  } catch (e) {
+    if (prev) { n.className = 'note bad'; n.textContent = '無法載入已送出的品項（請確認網路），目前只能新增，不能修改。'; }
+  }
 }
 
 function goShelf() {
   $('s-staff').textContent = S.staff; $('s-store').textContent = S.store;
   $('s-code').textContent = S.shelf.code;
   $('s-area').textContent = S.shelf.area || '未設定區域'; $('s-area').classList.toggle('hidden', false);
-  const prev = doneMap().get(S.shelf.code.toUpperCase());
-  $('s-already').classList.toggle('hidden', !prev);
-  if (prev) $('s-already').textContent = `此貨架今天已由 ${prev.staff} 盤點過（${String(prev.time).slice(11, 16) || prev.time}）。再次送出會新增一筆紀錄。`;
+  $('s-already').className = 'note hidden';
   show('v-shelf'); renderItems();
 }
 function judge(expStr) {
@@ -414,28 +456,45 @@ function renderItems() {
       <div class="main">
         <div class="name">${esc(it.name)}</div>
         <div class="meta">${esc(it.barcode)}${it.inMaster ? '' : '・<span style="color:var(--warn)">主檔未建檔</span>'}</div>
-        <div class="meta" style="margin-top:6px"><span class="chip ${it.cls}">${it.judge}</span> 效期 ${it.expiry.replace(/-/g, '/')}・${esc(it.kind)}</div>
+        <div class="meta" style="margin-top:6px"><span class="chip ${it.cls}">${it.judge}</span>${it.saved ? (sig(it) !== it.orig ? ' <span class="chip warn">已修改</span>' : ' <span class="chip gray">已送出</span>') : (S.items.some(x => x.saved) || S.deleted.length ? ' <span class="chip">新增</span>' : '')} 效期 ${it.expiry.replace(/-/g, '/')}・${esc(it.kind)}</div>
       </div>
       <div class="qty">${it.regularQty + it.giftQty}<small>${it.kind === '正價/贈品都有' ? `正${it.regularQty}／贈${it.giftQty}` : '件'}</small></div>
     </div>`).join('');
   L.querySelectorAll('.item').forEach(el => el.onclick = () => openItem(S.items[+el.dataset.i], +el.dataset.i));
-  $('b-finish').textContent = S.items.length ? `完成此貨架（${S.items.length} 筆）` : '此貨架無即期品';
+  const ch = changes();
+  $('b-finish').textContent = ch.hadSaved ? (ch.any ? `送出修改（新增 ${ch.adds.length}・修改 ${ch.updates.length}・刪除 ${ch.deletes.length}）` : '沒有變更，返回')
+    : S.items.length ? `完成此貨架（${S.items.length} 筆）` : '此貨架無即期品';
 }
 $('b-scan-item').onclick = () => openScanner('掃描商品條碼', code => { closeScanner(); newItem(code); });
 $('b-leave').onclick = async () => {
-  if (S.items.length && !(await ask('離開這座貨架？', `已登記的 ${S.items.length} 筆尚未送出，離開後會清除。`, '清除並離開'))) return;
-  S.shelf = null; S.items = []; saveDraft(); goPick();
+  const ch = changes();
+  if (ch.pending && !(await ask('離開這座貨架？', `還有 ${ch.pending} 筆新增或修改尚未送出，離開後會清除。`, '清除並離開'))) return;
+  S.shelf = null; S.items = []; S.deleted = []; saveDraft(); goPick();
 };
 $('b-finish').onclick = async () => {
+  const ch = changes();
+  if (ch.hadSaved) {
+    const code = S.shelf.code;
+    if (!ch.any) { S.shelf = null; S.items = []; S.deleted = []; saveDraft(); goPick(); return; }
+    if (!(await ask(`送出 ${code} 的修改`, `新增 ${ch.adds.length} 筆、修改 ${ch.updates.length} 筆、刪除 ${ch.deletes.length} 筆。刪除後無法復原。`, '送出'))) return;
+    const payload = { type: 'shelf', batchId: S.batchId, date: S.date, store: S.store, staff: S.staff, shelf: code, area: S.shelf.area || '',
+      items: ch.adds.map(strip), updates: ch.updates.map(strip), deletes: ch.deletes, mode: 'edit', ...timing() };
+    $('b-finish').disabled = true;
+    try { await postJSON(payload); }
+    catch (e) { $('b-finish').disabled = false; await ask('送出失敗', '修改已送出的資料需要網路。請連上網路後再按一次「送出修改」，目前的修改會先保留在手機。', '知道了', ''); return; }
+    $('b-finish').disabled = false;
+    S.shelf = null; S.items = []; S.deleted = []; saveDraft(); goPick();
+    toast(`${code} 修改已送出`); loadRemote(); return;
+  }
   const n = S.items.length;
   const ok = n ? await ask(`送出 ${S.shelf.code}`, `確認此貨架共 ${n} 筆即期品，送出後無法修改。`, '送出')
                : await ask(`${S.shelf.code} 無即期品`, '確認已檢查整座貨架，沒有即期品？', '確認無即期');
   if (!ok) return;
   const payload = { type: 'shelf', batchId: S.batchId, date: S.date, store: S.store, staff: S.staff, shelf: S.shelf.code, area: S.shelf.area || '',
-    items: S.items.map(({ cls, ...x }) => x) };
+    items: S.items.map(strip), mode: 'check', ...timing() };
   const q = queue(); q.push(payload); store.set('queue', q);
   const code = S.shelf.code;
-  S.shelf = null; S.items = []; saveDraft();
+  S.shelf = null; S.items = []; S.deleted = []; saveDraft();
   goPick();
   const r = await flushQueue();
   toast(r.failed ? `${code} 已暫存在手機，網路恢復後會自動上傳` : `${code} 已送出`);
@@ -507,14 +566,20 @@ $('i-save').onclick = () => {
   if (F.kind === '正價/贈品都有') { reg = num($('i-qreg').value); gift = num($('i-qgift').value); if (!reg || !gift) return err('選「都有」時，正價和贈品數量都要填（大於 0）'); }
   else { const q = num($('i-qty').value); if (!q) return err('請輸入數量'); if (F.kind === '都是正價') reg = q; else gift = q; }
   const j = judge(exp);
-  const it = { barcode: F.barcode, name, inMaster: F.inMaster, supplier: F.supplier, dept: F.dept, cat: F.cat,
+  const prevIt = F.idx < 0 ? null : S.items[F.idx];
+  const it = { itemId: prevIt ? prevIt.itemId : newId(), saved: !!(prevIt && prevIt.saved), orig: prevIt ? prevIt.orig : undefined, barcode: F.barcode, name, inMaster: F.inMaster, supplier: F.supplier, dept: F.dept, cat: F.cat,
     expiry: exp, daysLeft: j.days, judge: j.judge, cls: j.cls, kind: F.kind, regularQty: reg, giftQty: gift };
   if (F.idx < 0) S.items.push(it); else S.items[F.idx] = it;
   saveDraft(); closeItem(); renderItems();
   toast(F.idx < 0 ? '已加入，可繼續掃描下一個商品' : '已更新');
 };
 $('i-cancel').onclick = closeItem;
-$('i-delete').onclick = async () => { if (await ask('刪除這筆？', F.name, '刪除')) { S.items.splice(F.idx, 1); saveDraft(); closeItem(); renderItems(); } };
+$('i-delete').onclick = async () => {
+  const it = S.items[F.idx];
+  if (!(await ask('刪除這筆？', it.saved ? `${F.name}（已送出的品項，按「送出修改」後會從試算表刪除）` : F.name, '刪除'))) return;
+  if (it.saved) S.deleted.push(it.itemId);
+  S.items.splice(F.idx, 1); saveDraft(); closeItem(); renderItems();
+};
 function closeItem() { $('sh-item').classList.add('hidden'); }
 
 let onCode = null, busy = false, stream = null, loopT = null, nativeDet = null;
@@ -601,7 +666,16 @@ window.addEventListener('online', () => flushQueue().then(loadRemote));
 setInterval(() => { if (queue().length) flushQueue(); }, 30000);
 
 let MR = null;
-$('b-to-manager').onclick = () => { $('m-from').value = $('m-to').value = ymd(today()); show('v-manager'); };
+const FAST_SEC = 120;
+function setMonth(off) {
+  const t = today(), a = new Date(t.getFullYear(), t.getMonth() + off, 1), b = new Date(a.getFullYear(), a.getMonth() + 1, 0);
+  $('m-from').value = ymd(a); $('m-to').value = ymd(b > t ? t : b); $('m-month').value = ymd(a).slice(0, 7);
+}
+$('b-m-this').onclick = () => { setMonth(0); $('b-m-query').click(); };
+$('b-m-last').onclick = () => { setMonth(-1); $('b-m-query').click(); };
+$('m-month').onchange = () => { const v = $('m-month').value; if (!v) return; const [y, m] = v.split('-').map(Number); const a = new Date(y, m - 1, 1), b = new Date(y, m, 0); $('m-from').value = ymd(a); $('m-to').value = ymd(b); $('b-m-query').click(); };
+const fmtDur = s => s == null ? '－' : s < 60 ? `${s} 秒` : `${Math.floor(s / 60)} 分 ${s % 60} 秒`;
+$('b-to-manager').onclick = () => { setMonth(0); show('v-manager'); };
 $('b-m-back').onclick = () => show('v-start');
 $('b-m-query').onclick = async () => {
   const st = $('m-store').value, from = $('m-from').value, to = $('m-to').value;
@@ -611,18 +685,53 @@ $('b-m-query').onclick = async () => {
   $('b-m-query').disabled = false; $('b-m-query').textContent = '查詢';
 };
 function renderManager() {
-  const last = new Map();
-  MR.records.forEach(r => last.set(String(r.shelf).toUpperCase(), r));
+  const last = new Map(), times = new Map(), fastS = new Set();
+  MR.records.forEach(r => {
+    const k = String(r.shelf).toUpperCase(); last.set(k, r);
+    if (r.kind !== '修改') times.set(k, (times.get(k) || 0) + 1);
+    if (r.kind !== '修改' && r.duration != null && r.duration < FAST_SEC) fastS.add(k);
+  });
   const shelves = MR.shelves;
   const done = shelves.filter(s => last.has(s[1].toUpperCase()));
+  const todo = shelves.filter(s => !last.has(s[1].toUpperCase()));
+  const range = `${$('m-from').value.slice(5).replace('-', '/')}–${$('m-to').value.slice(5).replace('-', '/')}`;
+  $('m-todo-card').innerHTML = todo.length
+    ? `<div style="font-size:15px">${range} 還有 <b style="font-size:26px;color:var(--bad)">${todo.length}</b> 座貨架未盤點</div><div class="todo-list">${todo.map(s => `<span>${esc(s[1])}</span>`).join('')}</div>`
+    : `<div style="font-size:15px;color:var(--accent-d)">${range} 全部 ${shelves.length} 座貨架都已盤點 ✓</div>`;
+  const per = new Map();
+  MR.records.forEach(r => {
+    if (r.kind === '修改') return;
+    const p = per.get(r.staff) || { staff: r.staff, shelves: new Set(), n: 0, none: 0, durs: [], fast: [] };
+    p.shelves.add(String(r.shelf).toUpperCase()); p.n++; if (!r.count) p.none++;
+    if (r.duration != null) { p.durs.push(r.duration); if (r.duration < FAST_SEC) p.fast.push(r); }
+    per.set(r.staff, p);
+  });
+  const itemsBy = new Map(); MR.items.forEach(i => itemsBy.set(i.staff, (itemsBy.get(i.staff) || 0) + 1));
+  const P = [...per.values()].sort((a, b) => b.shelves.size - a.shelves.size);
+  $('m-staff').innerHTML = P.length
+    ? '<tr><th>人員</th><th>貨架</th><th>次數</th><th>即期</th><th>無即期</th><th>平均耗時</th><th>過快</th></tr>' +
+      P.map((p, i) => `<tr class="p" data-i="${i}"><td><b>${esc(p.staff)}</b></td><td>${p.shelves.size} 座</td><td>${p.n}</td><td>${itemsBy.get(p.staff) || 0} 筆</td><td>${p.none} 座</td>
+        <td style="white-space:nowrap">${p.durs.length ? fmtDur(Math.round(p.durs.reduce((a, b) => a + b, 0) / p.durs.length)) : '－'}</td>
+        <td>${p.fast.length ? `<span class="chip bad">${p.fast.length}</span>` : '0'}</td></tr>`).join('')
+    : '<tr><td class="muted" style="padding:16px">這段期間沒有盤點紀錄</td></tr>';
+  $('m-staff-detail').innerHTML = '';
+  $('m-staff').querySelectorAll('tr.p').forEach(tr => tr.onclick = () => {
+    const p = P[+tr.dataset.i];
+    const rows = MR.records.filter(r => r.staff === p.staff && r.kind !== '修改');
+    $('m-staff-detail').innerHTML = `<h2>${esc(p.staff)} 的盤點明細</h2><div class="card" style="padding:6px 10px;overflow-x:auto"><table>
+      <tr><th>日期</th><th>貨架</th><th>結果</th><th>耗時</th></tr>` + rows.map(r => `<tr><td style="white-space:nowrap">${esc(String(r.date).slice(5))} ${esc(String(r.time).slice(11, 16))}</td><td>${esc(r.shelf)}</td>
+      <td>${r.count ? r.count + ' 筆即期' : '無即期'}</td><td style="white-space:nowrap">${r.duration != null && r.duration < FAST_SEC ? `<span class="chip bad">${fmtDur(r.duration)}</span>` : fmtDur(r.duration)}</td></tr>`).join('') + '</table></div>';
+    $('m-staff-detail').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
   $('m-done').textContent = `${done.length} / ${shelves.length}`;
   $('m-todo').textContent = shelves.length - done.length;
   $('m-items').textContent = MR.items.length;
   $('m-reg').textContent = MR.items.filter(i => i.judge !== '未達即期').reduce((a, b) => a + b.regularQty, 0);
   $('m-grid').innerHTML = shelves.map(s => {
     const r = last.get(s[1].toUpperCase());
-    const cls = !r ? 'todo' : r.count ? 'hasexp' : 'done';
-    const sub = !r ? '未盤' : `${esc(r.staff)}・${r.count ? r.count + ' 筆' : '無即期'}`;
+    const k = s[1].toUpperCase();
+    const cls = (!r ? 'todo' : r.count ? 'hasexp' : 'done') + (fastS.has(k) ? ' fast' : '');
+    const sub = !r ? '未盤' : `${esc(r.staff)}・${r.count ? r.count + ' 筆' : '無即期'}<small>${esc(String(r.date).slice(5).replace('-', '/'))}・共 ${times.get(k) || 1} 次</small>`;
     return `<div class="cell ${cls}"><b>${esc(s[1])}</b>${sub}</div>`;
   }).join('');
   $('m-table').innerHTML = MR.items.length
@@ -651,9 +760,9 @@ $('b-m-csv').onclick = () => {
   flushQueue();
   const d = store.get('draft', null);
   if (d && d.date === ymd(today()) && d.shelf) {
-    Object.assign(S, d);
+    Object.assign(S, d); S.deleted = d.deleted || [];
     if (await ask('繼續上次的盤點？', `貨架 ${d.shelf.code} 還有 ${d.items.length} 筆尚未送出。`, '繼續', '放棄')) { goShelf(); return; }
-    S.shelf = null; S.items = []; saveDraft();
+    S.shelf = null; S.items = []; S.deleted = []; saveDraft();
   }
   if (location.hash === '#manager') $('b-to-manager').click();
 })();
