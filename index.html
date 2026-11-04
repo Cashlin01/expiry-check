@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="效期盤點">
 <title>效期盤點｜寵物好事</title>
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/zxing-wasm@3.1.6/dist/iife/reader/index.js"></script>
 <style>
 :root{
   --bg:#F6F2EC; --card:#FFFFFF; --ink:#3B3732; --sub:#8A837A; --line:#E7E1D8;
@@ -80,8 +80,10 @@ select{background-image:linear-gradient(45deg,transparent 50%,var(--sub) 50%),li
 .scanner{position:fixed;inset:0;background:#1E1C1A;z-index:30;display:flex;flex-direction:column;color:#fff}
 .scanner .top{display:flex;justify-content:space-between;align-items:center;padding:16px 18px;padding-top:calc(16px + env(safe-area-inset-top))}
 .scanner .top button{background:rgba(255,255,255,.14);color:#fff;border:none;font:inherit;padding:8px 14px;border-radius:999px}
-#reader{flex:1;width:100%;overflow:hidden}
-#reader video{object-fit:cover}
+#reader{flex:1;width:100%;overflow:hidden;position:relative;background:#000}
+#reader video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+#reader .guide{position:absolute;left:5%;right:5%;top:50%;height:26%;transform:translateY(-50%);border:2px solid rgba(255,255,255,.85);border-radius:14px;box-shadow:0 0 0 9999px rgba(0,0,0,.35)}
+#reader .guide.hit{border-color:#9FD48A}
 .scanner .bottom{padding:16px 18px calc(18px + env(safe-area-inset-bottom));background:#1E1C1A}
 .scanner .bottom input{background:#2C2926;border-color:#3D3935;color:#fff}
 .scanner .msg{font-size:14px;color:#CFC8BE;text-align:center;padding:4px 0 12px}
@@ -222,8 +224,7 @@ th{color:var(--sub);font-weight:500}
 <!-- ================= 掃描器 ================= -->
 <div class="scanner hidden" id="scanner">
   <div class="top"><span id="sc-title">掃描</span><button id="sc-close">關閉</button></div>
-  <div id="reader"></div>
-  <div id="reader-file" class="hidden"></div>
+  <div id="reader"><video id="sc-video" playsinline muted autoplay></video><div class="guide" id="sc-guide"></div></div>
   <div class="bottom">
     <div class="msg" id="sc-msg">將條碼橫放在框內，距離約 15–20 公分</div>
     <label for="sc-file" class="btn light" id="sc-photo" style="margin:0 0 10px">📷 掃不到？改用拍照辨識</label>
@@ -516,54 +517,70 @@ $('i-cancel').onclick = closeItem;
 $('i-delete').onclick = async () => { if (await ask('刪除這筆？', F.name, '刪除')) { S.items.splice(F.idx, 1); saveDraft(); closeItem(); renderItems(); } };
 function closeItem() { $('sh-item').classList.add('hidden'); }
 
-let QR = null, onCode = null, busy = false;
-const FORMATS = () => { const FM = Html5QrcodeSupportedFormats; return [FM.EAN_13, FM.EAN_8, FM.UPC_A, FM.UPC_E, FM.CODE_128, FM.CODE_39, FM.ITF]; };
+let onCode = null, busy = false, stream = null, loopT = null, nativeDet = null;
+const ZX_OPTS = { tryHarder: true, tryRotate: true, formats: ['EAN13', 'EAN8', 'UPCA', 'UPCE', 'Code128', 'Code39', 'ITF'], maxNumberOfSymbols: 1 };
+const zxReady = () => typeof ZXingWASM !== 'undefined';
+if ('BarcodeDetector' in window) { try { nativeDet = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf'] }); } catch (e) {} }
+async function readCanvas(c) {
+  if (nativeDet) { try { const r = await nativeDet.detect(c); if (r.length) return r[0].rawValue; } catch (e) {} }
+  if (zxReady()) { const r = await ZXingWASM.readBarcodes(c.getContext('2d').getImageData(0, 0, c.width, c.height), ZX_OPTS); if (r.length && r[0].isValid) return r[0].text; }
+  return null;
+}
+function hit(code) { if (busy) return; busy = true; $('sc-guide').classList.add('hit'); try { navigator.vibrate && navigator.vibrate(60); } catch (e) {} onCode(code); }
 async function openScanner(title, cb) {
   onCode = cb; busy = false;
-  $('sc-title').textContent = title; $('sc-manual').value = ''; $('sc-msg').textContent = '將條碼橫放在框內，距離約 15–20 公分';
+  $('sc-title').textContent = title; $('sc-manual').value = ''; $('sc-guide').classList.remove('hit');
+  $('sc-msg').textContent = '將條碼橫放在框內，距離約 15–20 公分';
   $('scanner').classList.remove('hidden');
-  if (typeof Html5Qrcode === 'undefined') { $('sc-msg').textContent = '掃描元件載入失敗，請手動輸入條碼'; return; }
+  if (!zxReady() && !nativeDet) { $('sc-msg').textContent = '掃描元件載入失敗，請檢查網路或手動輸入條碼'; return; }
   try {
-    const FM = Html5QrcodeSupportedFormats;
-    QR = new Html5Qrcode('reader', { formatsToSupport: FORMATS(), verbose: false, experimentalFeatures: { useBarCodeDetectorIfSupported: true } });
-    await QR.start({ facingMode: 'environment' }, { fps: 15, qrbox: (w, h) => ({ width: Math.floor(Math.max(120, Math.min(w * 0.92, 420))), height: Math.floor(Math.max(80, Math.min(h * 0.35, 200))) }),
-        videoConstraints: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 }, advanced: [{ focusMode: 'continuous' }] } },
-      text => { if (busy) return; busy = true; try { navigator.vibrate && navigator.vibrate(60); } catch (e) {} onCode(text); }, () => {});
-  } catch (e) {
-    $('sc-msg').textContent = '無法開啟相機（請允許相機權限），可先手動輸入條碼';
-  }
+    stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 }, advanced: [{ focusMode: 'continuous' }] } });
+  } catch (e) { $('sc-msg').textContent = '無法開啟相機（請允許相機權限），可改用拍照辨識或手動輸入'; return; }
+  const v = $('sc-video'); v.srcObject = stream; try { await v.play(); } catch (e) {}
+  const c = document.createElement('canvas'); let n = 0;
+  const tick = async () => {
+    if (!stream || busy) return;
+    if (v.videoWidth) {
+      // 平常只取掃描框那一條（快），每 3 次改掃整個畫面（條碼沒對準框也抓得到）
+      const vw = v.videoWidth, vh = v.videoHeight, full = (++n % 3 === 0);
+      const sw = full ? vw : Math.round(vw * 0.94), sh = full ? vh : Math.round(vh * 0.36);
+      const sx = Math.round((vw - sw) / 2), sy = Math.round((vh - sh) / 2);
+      const scale = Math.min(1, 1280 / sw);
+      c.width = Math.round(sw * scale); c.height = Math.round(sh * scale);
+      c.getContext('2d', { willReadFrequently: true }).drawImage(v, sx, sy, sw, sh, 0, 0, c.width, c.height);
+      try { const code = await readCanvas(c); if (code) return hit(code); } catch (e) {}
+    }
+    loopT = setTimeout(tick, 120);
+  };
+  tick();
 }
-async function closeScanner() {
-  $('scanner').classList.add('hidden');
-  if (QR) { try { await QR.stop(); } catch (e) {} try { QR.clear(); } catch (e) {} QR = null; }
+function stopCamera() {
+  clearTimeout(loopT); loopT = null;
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  try { $('sc-video').srcObject = null; } catch (e) {}
 }
+async function closeScanner() { $('scanner').classList.add('hidden'); stopCamera(); }
 $('sc-close').onclick = closeScanner;
 $('sc-ok').onclick = () => { const v = $('sc-manual').value.trim(); if (v) onCode(v); };
 $('sc-manual').onkeydown = e => { if (e.key === 'Enter') $('sc-ok').click(); };
 async function decodePhoto(file) {
   const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(file); });
-  if ('BarcodeDetector' in window) { try { const r = await new BarcodeDetector().detect(img); if (r.length) return r[0].rawValue; } catch (e) {} }
-  if (typeof Html5Qrcode === 'undefined') return null;
-  const dec = new Html5Qrcode('reader-file', { formatsToSupport: FORMATS(), verbose: false });
-  try {
-    for (const [w, rot] of [[1600, 0], [1000, 0], [2400, 0], [1600, 90]]) {
-      const s = Math.min(1, w / Math.max(img.naturalWidth, img.naturalHeight));
-      const iw = Math.round(img.naturalWidth * s), ih = Math.round(img.naturalHeight * s);
-      const c = document.createElement('canvas'); c.width = rot ? ih : iw; c.height = rot ? iw : ih;
-      const g = c.getContext('2d'); if (rot) { g.translate(c.width, 0); g.rotate(Math.PI / 2); } g.drawImage(img, 0, 0, iw, ih);
-      const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.92));
-      try { return await dec.scanFile(new File([blob], 'p.jpg', { type: 'image/jpeg' }), false); } catch (e) {}
-    }
-    return null;
-  } finally { try { dec.clear(); } catch (e) {} }
+  for (const w of [1600, 2600, 1000]) {
+    const s = Math.min(1, w / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * s); c.height = Math.round(img.naturalHeight * s);
+    c.getContext('2d', { willReadFrequently: true }).drawImage(img, 0, 0, c.width, c.height);
+    try { const code = await readCanvas(c); if (code) return code; } catch (e) {}
+    if (s === 1) break;
+  }
+  return null;
 }
-$('sc-photo').addEventListener('click', () => { if (QR) { const q = QR; QR = null; try { q.stop().then(() => q.clear()).catch(() => {}); } catch (e) {} } $('sc-file').value = ''; });
+$('sc-photo').addEventListener('click', () => { stopCamera(); $('sc-file').value = ''; });
 $('sc-file').onchange = async () => {
   const f = $('sc-file').files[0]; if (!f) return;
   $('sc-msg').textContent = '辨識中…';
   let code = null; try { code = await decodePhoto(f); } catch (e) {}
-  if (code) { try { navigator.vibrate && navigator.vibrate(60); } catch (e) {} onCode(code); }
-  else $('sc-msg').textContent = '照片裡讀不到條碼：請靠近一點、讓條碼橫放清楚再拍一次，或手動輸入';
+  if (code) hit(code);
+  else $('sc-msg').textContent = '照片裡讀不到條碼：請靠近一點、讓條碼清楚對焦再拍一次，或手動輸入';
 };
 
 let flushing = false;
