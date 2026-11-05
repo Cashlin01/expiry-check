@@ -109,6 +109,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}
 td,th{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
 th{color:var(--sub);font-weight:500}
 .sync{font-size:12px;color:var(--warn);margin-top:6px}
+.qty-in{text-align:center;font-size:20px;font-weight:600}
 </style>
 </head>
 <body>
@@ -202,6 +203,8 @@ th{color:var(--sub);font-weight:500}
       <div class="tile"><div class="v" id="m-todo"></div><div class="k">未盤貨架</div></div>
       <div class="tile"><div class="v" id="m-items"></div><div class="k">登記品項（筆）</div></div>
       <div class="tile"><div class="v" id="m-reg"></div><div class="k">正價即期數量（可向廠商反映）</div></div>
+      <div class="tile"><div class="v" id="m-gift"></div><div class="k">贈品即期數量</div></div>
+      <div class="tile"><div class="v" id="m-wel"></div><div class="k">福利品即期數量</div></div>
     </div>
     <h2>貨架狀態</h2>
     <div class="muted" style="margin-bottom:8px"><span class="chip">已盤・無即期</span> <span class="chip warn">已盤・有即期</span> <span class="chip gray">未盤</span> <span class="chip bad">有過快紀錄</span></div>
@@ -229,20 +232,12 @@ th{color:var(--sub);font-weight:500}
   <label for="i-exp">效期（年月日 8 碼，例如 20270315）</label>
   <input id="i-exp" inputmode="numeric" maxlength="10" placeholder="YYYYMMDD">
   <div id="i-exp-note" class="hidden"></div>
-  <label>商品性質</label>
-  <div class="seg" id="i-kind">
-    <button data-k="都是正價">即期都是正價商品</button>
-    <button data-k="都是贈品">即期都是贈品</button>
-    <button data-k="正價/贈品都有">正價／贈品都有即期</button>
+  <div class="row">
+    <div><label for="i-qreg">正價</label><input id="i-qreg" class="qty-in" inputmode="numeric" value="0"></div>
+    <div><label for="i-qgift">贈品</label><input id="i-qgift" class="qty-in" inputmode="numeric" value="0"></div>
+    <div><label for="i-qwel">福利品</label><input id="i-qwel" class="qty-in" inputmode="numeric" value="0"></div>
   </div>
-  <div id="i-qty-one" class="hidden">
-    <label for="i-qty">數量</label>
-    <input id="i-qty" inputmode="numeric" placeholder="0">
-  </div>
-  <div id="i-qty-two" class="row hidden">
-    <div><label for="i-qreg">正價數量</label><input id="i-qreg" inputmode="numeric" placeholder="0"></div>
-    <div><label for="i-qgift">贈品數量</label><input id="i-qgift" inputmode="numeric" placeholder="0"></div>
-  </div>
+  <div class="muted" style="margin-top:6px">有哪一種就填哪一格，至少一格大於 0。</div>
   <div id="i-err" class="note bad hidden"></div>
   <div class="row" style="margin-top:20px">
     <button class="btn ghost" id="i-cancel">取消</button>
@@ -373,7 +368,9 @@ function findShelf(code) {
 let S = { staff: '', store: '', date: ymd(today()), shelf: null, items: [], deleted: [], batchId: '', remote: [] };
 function saveDraft() { store.set('draft', S.shelf ? { shelf: S.shelf, items: S.items, deleted: S.deleted, startedAt: S.startedAt, batchId: S.batchId, date: S.date, store: S.store, staff: S.staff } : null); }
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-const sig = x => [x.expiry, x.kind, x.regularQty, x.giftQty, x.name].join('|');
+const sig = x => [x.expiry, x.regularQty, x.giftQty, x.welfareQty || 0, x.name].join('|');
+const kindOf = (r, g, w) => [r > 0 && '正價', g > 0 && '贈品', w > 0 && '福利品'].filter(Boolean).join('+');
+const qtyText = it => [it.regularQty && `正${it.regularQty}`, it.giftQty && `贈${it.giftQty}`, it.welfareQty && `福${it.welfareQty}`].filter(Boolean).join('・');
 const strip = ({ cls, saved, orig, staff, ...x }) => x;
 const stamp = t => { const d = new Date(t); return `${ymd(d)} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; };
 const timing = () => S.startedAt ? { startedAt: stamp(S.startedAt), duration: Math.max(0, Math.round((Date.now() - S.startedAt) / 1000)) } : {};
@@ -476,9 +473,9 @@ function renderItems() {
       <div class="main">
         <div class="name">${esc(it.name)}</div>
         <div class="meta">${esc(it.barcode)}${it.inMaster ? '' : '・<span style="color:var(--warn)">主檔未建檔</span>'}</div>
-        <div class="meta" style="margin-top:6px"><span class="chip ${it.cls}">${it.judge}</span>${it.saved ? (sig(it) !== it.orig ? ' <span class="chip warn">已修改</span>' : ' <span class="chip gray">已送出</span>') : (S.items.some(x => x.saved) || S.deleted.length ? ' <span class="chip">新增</span>' : '')} 效期 ${it.expiry.replace(/-/g, '/')}・${esc(it.kind)}</div>
+        <div class="meta" style="margin-top:6px"><span class="chip ${it.cls}">${it.judge}</span>${it.saved ? (sig(it) !== it.orig ? ' <span class="chip warn">已修改</span>' : ' <span class="chip gray">已送出</span>') : (S.items.some(x => x.saved) || S.deleted.length ? ' <span class="chip">新增</span>' : '')} 效期 ${it.expiry.replace(/-/g, '/')}</div>
       </div>
-      <div class="qty">${it.regularQty + it.giftQty}<small>${it.kind === '正價/贈品都有' ? `正${it.regularQty}／贈${it.giftQty}` : '件'}</small></div>
+      <div class="qty">${it.regularQty + it.giftQty + (it.welfareQty || 0)}<small>${qtyText(it)}</small></div>
     </div>`).join('');
   L.querySelectorAll('.item').forEach(el => el.onclick = () => openItem(S.items[+el.dataset.i], +el.dataset.i));
   const ch = changes();
@@ -525,7 +522,7 @@ let F = null; // 編輯中的品項
 function newItem(code) {
   code = String(code || '').trim(); if (!code) return;
   const p = findProduct(code);
-  openItem({ barcode: p ? p[0] : code, name: p ? p[1] : '', inMaster: !!p, supplier: p ? p[2] : '', dept: p ? p[3] : '', cat: p ? p[4] : '', expiry: '', kind: '', regularQty: 0, giftQty: 0 }, -1);
+  openItem({ barcode: p ? p[0] : code, name: p ? p[1] : '', inMaster: !!p, supplier: p ? p[2] : '', dept: p ? p[3] : '', cat: p ? p[4] : '', expiry: '', kind: '', regularQty: 0, giftQty: 0, welfareQty: 0 }, -1);
 }
 function openItem(it, idx) {
   F = { ...it, idx };
@@ -536,9 +533,7 @@ function openItem(it, idx) {
   $('i-master-note').classList.toggle('hidden', it.inMaster);
   $('i-name').value = it.inMaster ? '' : it.name; $('i-name-show').textContent = it.inMaster ? it.name : '';
   $('i-exp').value = it.expiry ? it.expiry.replace(/-/g, '') : '';
-  setKind(it.kind);
-  $('i-qty').value = it.kind && it.kind !== '正價/贈品都有' ? (it.regularQty + it.giftQty || '') : '';
-  $('i-qreg').value = it.kind === '正價/贈品都有' ? it.regularQty : ''; $('i-qgift').value = it.kind === '正價/贈品都有' ? it.giftQty : '';
+  $('i-qreg').value = it.regularQty || 0; $('i-qgift').value = it.giftQty || 0; $('i-qwel').value = it.welfareQty || 0;
   $('i-err').classList.add('hidden');
   $('i-delete').classList.toggle('hidden', idx < 0);
   $('i-save').textContent = idx < 0 ? '加入' : '儲存';
@@ -546,13 +541,7 @@ function openItem(it, idx) {
   $('sh-item').classList.remove('hidden');
   setTimeout(() => (it.inMaster ? $('i-exp') : $('i-name')).focus(), 250);
 }
-function setKind(k) {
-  F.kind = k;
-  document.querySelectorAll('#i-kind button').forEach(b => b.classList.toggle('on', b.dataset.k === k));
-  $('i-qty-one').classList.toggle('hidden', !k || k === '正價/贈品都有');
-  $('i-qty-two').classList.toggle('hidden', k !== '正價/贈品都有');
-}
-document.querySelectorAll('#i-kind button').forEach(b => b.onclick = () => { setKind(b.dataset.k); (b.dataset.k === '正價/贈品都有' ? $('i-qreg') : $('i-qty')).focus(); });
+document.querySelectorAll('.qty-in').forEach(el => { el.addEventListener('focus', () => el.select()); el.addEventListener('blur', () => { if (el.value.trim() === '') el.value = '0'; }); });
 function parseExp(v) {
   v = String(v).replace(/[^\d]/g, '');
   if (v.length !== 8) return null;
@@ -574,21 +563,19 @@ function expNote() {
   return e;
 }
 $('i-exp').oninput = expNote;
-['i-name', 'i-exp', 'i-qty', 'i-qreg', 'i-qgift'].forEach(id => $(id).addEventListener('input', () => $('i-err').classList.add('hidden')));
+['i-name', 'i-exp', 'i-qreg', 'i-qgift', 'i-qwel'].forEach(id => $(id).addEventListener('input', () => $('i-err').classList.add('hidden')));
 const num = v => { const n = parseInt(String(v).replace(/[^\d]/g, ''), 10); return isNaN(n) ? 0 : n; };
 $('i-save').onclick = () => {
   const err = m => { $('i-err').textContent = m; $('i-err').classList.remove('hidden'); };
   const name = F.inMaster ? F.name : $('i-name').value.trim();
   if (!name) return err('請輸入品名');
   const exp = expNote(); if (!exp) return err('請輸入正確的效期（8 碼）');
-  if (!F.kind) return err('請選擇商品性質');
-  let reg = 0, gift = 0;
-  if (F.kind === '正價/贈品都有') { reg = num($('i-qreg').value); gift = num($('i-qgift').value); if (!reg || !gift) return err('選「都有」時，正價和贈品數量都要填（大於 0）'); }
-  else { const q = num($('i-qty').value); if (!q) return err('請輸入數量'); if (F.kind === '都是正價') reg = q; else gift = q; }
+  const reg = num($('i-qreg').value), gift = num($('i-qgift').value), wel = num($('i-qwel').value);
+  if (!reg && !gift && !wel) return err('正價、贈品、福利品至少要有一格大於 0');
   const j = judge(exp);
   const prevIt = F.idx < 0 ? null : S.items[F.idx];
   const it = { itemId: prevIt ? prevIt.itemId : newId(), saved: !!(prevIt && prevIt.saved), orig: prevIt ? prevIt.orig : undefined, barcode: F.barcode, name, inMaster: F.inMaster, supplier: F.supplier, dept: F.dept, cat: F.cat,
-    expiry: exp, daysLeft: j.days, judge: j.judge, cls: j.cls, kind: F.kind, regularQty: reg, giftQty: gift };
+    expiry: exp, daysLeft: j.days, judge: j.judge, cls: j.cls, kind: kindOf(reg, gift, wel), regularQty: reg, giftQty: gift, welfareQty: wel };
   if (F.idx < 0) S.items.push(it); else S.items[F.idx] = it;
   saveDraft(); closeItem(); renderItems();
   toast(F.idx < 0 ? '已加入，可繼續掃描下一個商品' : '已更新');
@@ -746,7 +733,10 @@ function renderManager() {
   $('m-done').textContent = `${done.length} / ${shelves.length}`;
   $('m-todo').textContent = shelves.length - done.length;
   $('m-items').textContent = MR.items.length;
-  $('m-reg').textContent = MR.items.filter(i => i.judge !== '未達即期').reduce((a, b) => a + b.regularQty, 0);
+  const near = MR.items.filter(i => i.judge !== '未達即期');
+  $('m-reg').textContent = near.reduce((a, b) => a + b.regularQty, 0);
+  $('m-gift').textContent = near.reduce((a, b) => a + b.giftQty, 0);
+  $('m-wel').textContent = near.reduce((a, b) => a + (b.welfareQty || 0), 0);
   $('m-grid').innerHTML = shelves.map(s => {
     const r = last.get(s[1].toUpperCase());
     const k = s[1].toUpperCase();
@@ -755,16 +745,16 @@ function renderManager() {
     return `<div class="cell ${cls}"><b>${esc(s[1])}</b>${sub}</div>`;
   }).join('');
   $('m-table').innerHTML = MR.items.length
-    ? '<tr><th>貨架</th><th>品名</th><th>效期</th><th>判斷</th><th>正價</th><th>贈品</th></tr>' +
+    ? '<tr><th>貨架</th><th>品名</th><th>效期</th><th>判斷</th><th>正價</th><th>贈品</th><th>福利</th></tr>' +
       MR.items.map(i => `<tr><td>${esc(i.shelf)}</td><td>${esc(i.name)}${i.master !== '已建檔' ? '<br><span class="chip warn">主檔未建檔</span>' : ''}</td><td style="white-space:nowrap">${esc(i.expiry)}</td>
-        <td><span class="chip ${i.judge === '已過期' ? 'bad' : i.judge === '即期' ? 'warn' : 'gray'}">${esc(i.judge)}</span></td><td>${i.regularQty}</td><td>${i.giftQty}</td></tr>`).join('')
+        <td><span class="chip ${i.judge === '已過期' ? 'bad' : i.judge === '即期' ? 'warn' : 'gray'}">${esc(i.judge)}</span></td><td>${i.regularQty}</td><td>${i.giftQty}</td><td>${i.welfareQty || 0}</td></tr>`).join('')
     : '<tr><td class="muted" style="padding:16px">這段期間沒有即期品紀錄</td></tr>';
   $('m-result').classList.remove('hidden');
 }
 $('b-m-csv').onclick = () => {
   if (!MR) return;
-  const head = ['盤點日期', '盤點人員', '貨架號碼', '條碼', '品名', '主檔狀態', '供應商', '效期', '剩餘天數', '即期判斷', '商品性質', '正價數量', '贈品數量'];
-  const rows = MR.items.map(i => [i.date, i.staff, i.shelf, '="' + i.barcode + '"', i.name, i.master, i.supplier, i.expiry, i.daysLeft, i.judge, i.kind, i.regularQty, i.giftQty]);
+  const head = ['盤點日期', '盤點人員', '貨架號碼', '條碼', '品名', '主檔狀態', '供應商', '效期', '剩餘天數', '即期判斷', '商品性質', '正價數量', '贈品數量', '福利品數量'];
+  const rows = MR.items.map(i => [i.date, i.staff, i.shelf, '="' + i.barcode + '"', i.name, i.master, i.supplier, i.expiry, i.daysLeft, i.judge, i.kind, i.regularQty, i.giftQty, i.welfareQty || 0]);
   const csv = '﻿' + [head, ...rows].map(r => r.map(c => /[",\n]/.test(String(c)) && !String(c).startsWith('="') ? `"${String(c).replace(/"/g, '""')}"` : c).join(',')).join('\r\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
