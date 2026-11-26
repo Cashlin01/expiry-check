@@ -338,7 +338,8 @@ function vendorHTML(supplier, exp, inMaster) {
   let h;
   if (v.mode === '廠商處理') {
     const m = v.months ? `效期 ${v.months} 個月內可回收` : '未設定可處理月長';
-    h = v.can === true ? `<span class="chip">廠商處理</span> ${m}・<b>目前可請廠商處理</b>`
+    h = exp && exp < ymd(today()) ? `<span class="chip bad">廠商處理</span> ${m}・<b>已過期・廠商不收，請下架</b>`
+      : v.can === true ? `<span class="chip">廠商處理</span> ${m}・<b>目前可請廠商處理</b>`
       : v.can === false ? `<span class="chip warn">廠商處理</span> ${m}・<b>還要再等 ${v.wait} 天</b>（${v.from.replace(/-/g, '/')} 起可回收）`
       : `<span class="chip">廠商處理</span> ${m}`;
   } else if (v.mode === '自行處理') h = `<span class="chip gray">自行處理</span> 廠商不回收，由門市自行處理`;
