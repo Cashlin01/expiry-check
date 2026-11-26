@@ -64,6 +64,8 @@ select{background-image:linear-gradient(45deg,transparent 50%,var(--sub) 50%),li
 .seg button{font:inherit;font-size:16px;text-align:left;padding:13px 14px;border-radius:12px;border:1px solid var(--line);background:#FCFBF9;color:var(--ink);cursor:pointer}
 .seg button.on{border-color:var(--accent);background:var(--soft);color:var(--accent-d);font-weight:600}
 .note{font-size:13px;border-radius:10px;padding:10px 12px;margin-top:8px}
+.vbox{font-size:13px;line-height:1.6;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:8px;background:#FCFBF9}
+.vbox .vs{margin-top:4px;color:var(--warn);font-weight:600}
 .note.ok{background:var(--soft);color:var(--accent-d)}
 .note.warn{background:var(--warn-soft);color:var(--warn)}
 .note.bad{background:var(--bad-soft);color:var(--bad)}
@@ -217,7 +219,8 @@ body{padding-bottom:170px}
     <div id="d-prog"></div>
   </div>
   <div id="t-pend" class="hidden">
-    <select id="d-store"></select>
+    <div class="row"><select id="d-store"></select><select id="d-vend">
+      <option value="">全部處理方式</option><option value="can">可請廠商回收</option><option value="wait">廠商未到期間</option><option value="self">自行處理</option><option value="none">未設定</option></select></div>
     <div class="muted" id="d-pend-sum" style="margin:10px 0 0"></div>
     <div id="d-pend"></div>
   </div>
@@ -242,6 +245,7 @@ body{padding-bottom:170px}
   <div class="hint hidden" id="i-last"><span id="i-last-t"></span><button id="i-same">與上次相同</button></div>
   <input id="i-exp" inputmode="numeric" maxlength="8" placeholder="YYMMDD">
   <div id="i-exp-note" class="hidden"></div>
+  <div id="i-vendor" class="vbox hidden"></div>
   <div class="row">
     <div><label for="i-qreg">正價</label><input id="i-qreg" class="qty-in" inputmode="numeric" value="0"></div>
     <div><label for="i-qgift">贈品</label><input id="i-qgift" class="qty-in" inputmode="numeric" value="0"></div>
@@ -333,12 +337,47 @@ async function postJSON(body) {
 /* ---------- 主檔 ---------- */
 let M = { products: new Map(), zones: [], updated: '' };
 let masterErr = '';
-function loadMasterFrom(j) { M.products = new Map(j.products.map(p => [p[0], p])); M.zones = j.zones; M.updated = j.updated; }
+
+// 廠商處理規則：供應商 → [供應商, 可處理即期, 可處理月長, 特殊規定]
+function vendorInfo(supplier, exp) {
+  const r = M.rules ? M.rules.get(String(supplier || '').trim()) : null;
+  const note = r ? r[3] : '';
+  if (!r || !r[1]) return { mode: '未設定', note };
+  const months = parseInt(r[2], 10);
+  if (r[1] !== '廠商處理' || isNaN(months)) return { mode: r[1], note, months: isNaN(months) ? null : months };
+  if (!exp) return { mode: r[1], note, months };
+  const e = new Date(exp + 'T00:00:00'), t = today();
+  const can = e <= addMonths(t, months);
+  const from = addMonths(e, -months);
+  return { mode: r[1], note, months, can, wait: can ? 0 : Math.max(1, Math.round((from - t) / 864e5)), from: ymd(from) };
+}
+function vendorHTML(supplier, exp, inMaster) {
+  const v = vendorInfo(supplier, exp);
+  let h;
+  if (v.mode === '廠商處理') {
+    const m = v.months ? `效期 ${v.months} 個月內可回收` : '未設定可處理月長';
+    h = v.can === true ? `<span class="chip">廠商處理</span> ${m}・<b>目前可請廠商處理</b>`
+      : v.can === false ? `<span class="chip warn">廠商處理</span> ${m}・<b>還要再等 ${v.wait} 天</b>（${v.from.replace(/-/g, '/')} 起可回收）`
+      : `<span class="chip">廠商處理</span> ${m}`;
+  } else if (v.mode === '自行處理') h = `<span class="chip gray">自行處理</span> 廠商不回收，由門市自行處理`;
+  else h = `<span class="chip gray">未設定處理方式</span> ${inMaster === false ? '主檔未建檔，無法判斷供應商' : '供應商：' + esc(supplier || '（空白）')}`;
+  return h + (v.note ? `<div class="vs">⚠ 特殊規定：${esc(v.note)}</div>` : '');
+}
+function vendorChip(x) {
+  const v = vendorInfo(x.supplier, x.expiry);
+  return v.can === true ? ' <span class="chip">可請廠商回收</span>' : v.mode === '自行處理' ? ' <span class="chip gray">自行處理</span>' : v.mode === '廠商處理' ? ' <span class="chip gray">廠商處理・未到期間</span>' : '';
+}
+function vendorBox(exp) {
+  const b = $('i-vendor');
+  if (!F || !M.rules) { b.classList.add('hidden'); return; }
+  b.innerHTML = vendorHTML(F.supplier, exp || null, F.inMaster); b.classList.remove('hidden');
+}
+function loadMasterFrom(j) { M.products = new Map(j.products.map(p => [p[0], p])); M.zones = j.zones; M.updated = j.updated; M.rules = j.rules ? new Map(j.rules.map(r => [r[0], r])) : null; }
 async function initMaster() {
   const c = store.get('master', null);
   if (c) loadMasterFrom(c);
   renderMasterInfo();
-  if (!c || (Date.now() - (c.fetchedAt || 0)) / 36e5 > MASTER_MAX_AGE_H) await refreshMaster(!c);
+  if (!c || !c.rules || (Date.now() - (c.fetchedAt || 0)) / 36e5 > MASTER_MAX_AGE_H) await refreshMaster(!c);
 }
 async function refreshMaster(loud) {
   try {
@@ -455,7 +494,7 @@ function renderZone() {
     return `<div class="pend ${ex && !r && !ra ? 'exp' : ''}" data-id="${esc(p.itemId)}">
       <div class="name" style="font-weight:600">${esc(p.name)}</div>
       <div class="meta muted">${esc(p.barcode)}・${md(p.date)} ${esc(p.staff)} 登記・${qtyText(p)}</div>
-      <div class="meta" style="margin-top:6px"><span class="chip ${j.cls}">${ex ? `已過期 ${-j.days} 天` : j.judge}</span> 效期 ${slash(p.expiry)}</div>
+      <div class="meta" style="margin-top:6px"><span class="chip ${j.cls}">${ex ? `已過期 ${-j.days} 天` : j.judge}</span>${vendorChip(p)} 效期 ${slash(p.expiry)}</div>
       <div class="acts">
         ${ex ? '' : `<button data-a="keep" class="${ra ? 'on' : ''}">${ra ? '已重新登記' : '仍在架上'}</button>`}
         <button data-a="已售出" class="${r === '已售出' ? 'on' : ''}">已售出</button>
@@ -471,7 +510,7 @@ function renderZone() {
       <div class="main">
         <div class="name">${esc(it.name)}</div>
         <div class="meta">${esc(it.barcode)}${it.inMaster ? '' : '・<span style="color:var(--warn)">主檔未建檔</span>'}</div>
-        <div class="meta" style="margin-top:6px"><span class="chip ${it.cls}">${it.judge}</span> <span class="chip ${it.status === '持續觀察' ? 'gray' : ''}">${esc(it.status)}</span>${it.saved ? (sig(it) !== it.orig ? ' <span class="chip warn">已修改</span>' : ' <span class="chip gray">已送出</span>') : ''} 效期 ${slash(it.expiry)}${it.source === 'same' ? '（沿用上次）' : ''}</div>
+        <div class="meta" style="margin-top:6px"><span class="chip ${it.cls}">${it.judge}</span>${vendorChip(it)} <span class="chip ${it.status === '持續觀察' ? 'gray' : ''}">${esc(it.status)}</span>${it.saved ? (sig(it) !== it.orig ? ' <span class="chip warn">已修改</span>' : ' <span class="chip gray">已送出</span>') : ''} 效期 ${slash(it.expiry)}${it.source === 'same' ? '（沿用上次）' : ''}</div>
       </div>
       <div class="qty">${it.regularQty + it.giftQty + (it.welfareQty || 0)}<small>${qtyText(it)}</small></div>
     </div>`).join('') : '<div class="empty">尚未登記任何即期品<br>有即期品請按「掃描即期商品」</div>';
@@ -560,10 +599,10 @@ function parseExp(v) {
 function expNote() {
   const n = $('i-exp-note'), raw = $('i-exp').value.replace(/[^\d]/g, '');
   const sOpt = $('i-status').querySelector('option');
-  if (raw.length < 6 || raw.length === 7) { n.className = 'hidden'; sOpt.disabled = false; return null; }
+  if (raw.length < 6 || raw.length === 7) { n.className = 'hidden'; sOpt.disabled = false; vendorBox(null); return null; }
   const e = parseExp(raw);
-  if (!e) { n.className = 'note bad'; n.textContent = '日期格式不正確，請輸入 6 碼，例如 270315'; return null; }
-  const j = judge(e);
+  if (!e) { n.className = 'note bad'; n.textContent = '日期格式不正確，請輸入 6 碼，例如 270315'; vendorBox(null); return null; }
+  const j = judge(e); vendorBox(e);
   sOpt.disabled = j.judge === '已過期';
   if (j.judge === '已過期' && $('i-status').value === '持續觀察') $('i-status').value = '已下架';
   n.className = 'note ' + (j.cls === 'gray' ? 'warn' : j.cls === 'warn' ? 'ok' : 'bad');
@@ -684,6 +723,7 @@ $('b-d-this').onclick = () => { $('d-month').value = ymd(today()).slice(0, 7); l
 $('b-d-last').onclick = () => { const t = today(); $('d-month').value = ymd(new Date(t.getFullYear(), t.getMonth() - 1, 1)).slice(0, 7); loadDash(); };
 $('d-month').onchange = loadDash;
 $('d-store').onchange = renderPend;
+$('d-vend').onchange = renderPend;
 async function loadDash() {
   $('d-sum').textContent = '載入中…';
   try { DASH = await getJSON({ action: 'dash', month: $('d-month').value || ymd(today()).slice(0, 7) }); }
@@ -711,14 +751,17 @@ function renderProg() {
 function renderPend() {
   if (!DASH) return;
   const st = $('d-store').value;
-  const list = DASH.pending.filter(p => !st || p.store === st).sort((a, b) => a.expiry < b.expiry ? -1 : 1);
-  $('d-pend-sum').textContent = `持續觀察中 ${list.length} 筆（依效期由近到遠）`;
+  const vf = $('d-vend').value;
+  const vk = p => { const v = vendorInfo(p.supplier, p.expiry); return v.can === true ? 'can' : v.mode === '廠商處理' ? 'wait' : v.mode === '自行處理' ? 'self' : 'none'; };
+  const list = DASH.pending.filter(p => (!st || p.store === st) && (!vf || vk(p) === vf)).sort((a, b) => a.expiry < b.expiry ? -1 : 1);
+  $('d-pend-sum').textContent = `${vf ? $('d-vend').selectedOptions[0].textContent + '・' : ''}持續觀察中 ${list.length} 筆（依效期由近到遠）`;
   $('d-pend').innerHTML = list.length ? list.map(p => {
     const j = judge(p.expiry), ex = p.expiry < DASH.today;
     return `<div class="pend ${ex ? 'exp' : ''}" data-id="${esc(p.itemId)}">
       <div style="font-weight:600">${esc(p.name)}</div>
       <div class="muted" style="font-size:13px">${esc(p.store)} ${esc(p.zone)} 區・${md(p.date)} ${esc(p.staff)} 登記・${qtyText(p)}</div>
       <div style="margin-top:6px;font-size:13px"><span class="chip ${j.cls}">${ex ? `已過期 ${-j.days} 天` : j.judge === '即期' ? `剩 ${j.days} 天` : j.judge}</span> 效期 ${slash(p.expiry)}</div>
+      <div class="vbox">${p.supplier ? esc(p.supplier) + '<br>' : ''}${vendorHTML(p.supplier, p.expiry, p.inMaster)}</div>
       <div class="acts"><button data-a="已售出">已售出</button><button data-a="已下架">已下架</button></div></div>`;
   }).join('') : '<div class="empty">目前沒有持續觀察中的品項</div>';
   $('d-pend').querySelectorAll('.pend').forEach(el => el.querySelectorAll('button').forEach(b => b.onclick = async () => {
